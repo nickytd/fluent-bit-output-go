@@ -4,7 +4,6 @@ import (
 	"C"
 	"fmt"
 	"log/slog"
-	"os"
 	"unsafe"
 
 	"github.com/fluent/fluent-bit-go/output"
@@ -32,6 +31,15 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		id = fmt.Sprintf("%d", instanceCount)
 	}
 	instanceCount++
+
+	queueDir := output.FLBPluginConfigKey(plugin, "queue_dir")
+	if queueDir == "" {
+		queueDir = "/tmp/fluent-bit-pebble"
+	}
+	if err := initQueue(queueDir); err != nil {
+		slog.New(baseHandler).Error("failed to init queue", "err", err)
+		return output.FLB_ERROR
+	}
 
 	inst := &pluginInstance{
 		id:     id,
@@ -70,10 +78,9 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		return output.FLB_ERROR
 	}
 
-	// Write raw OTLP JSON to stdout; slog would wrap it in a log line, breaking tests.
-	if _, err := fmt.Fprintln(os.Stdout, string(b)); err != nil {
-		inst.logger.Error("write error", "err", err)
-		return output.FLB_ERROR
+	if err := enqueue(b); err != nil {
+		inst.logger.Error("enqueue error", "err", err)
+		return output.FLB_RETRY
 	}
 	return output.FLB_OK
 }
@@ -87,6 +94,7 @@ func FLBPluginExitCtx(ctx unsafe.Pointer) int {
 
 //export FLBPluginUnregister
 func FLBPluginUnregister(def unsafe.Pointer) {
+	shutdownQueue()
 	slog.New(baseHandler).Info("unregistering plugin")
 	output.FLBPluginUnregister(def)
 }
