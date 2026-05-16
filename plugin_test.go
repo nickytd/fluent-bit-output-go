@@ -41,14 +41,16 @@ func TestProcessRecords_StandardFlatRecord(t *testing.T) {
 		t.Errorf("unexpected timestamp: %v", lr.Timestamp())
 	}
 
-	msg, ok := lr.Attributes().Get("message")
-	if !ok || msg.Str() != "hello world" {
-		t.Errorf("expected message=hello world, got %v", msg)
+	if lr.Body().Str() != "hello world" {
+		t.Errorf("expected body=hello world, got %s", lr.Body().Str())
 	}
 
-	level, ok := lr.Attributes().Get("level")
-	if !ok || level.Str() != "info" {
-		t.Errorf("expected level=info, got %v", level)
+	if lr.SeverityText() != "info" {
+		t.Errorf("expected severity_text=info, got %s", lr.SeverityText())
+	}
+
+	if lr.SeverityNumber() != plog.SeverityNumberInfo {
+		t.Errorf("expected severity_number=INFO, got %d", lr.SeverityNumber())
 	}
 }
 
@@ -217,9 +219,8 @@ func TestProcessRecords_MixedBatch(t *testing.T) {
 	// First flat record
 	lr0 := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
 
-	msg, _ := lr0.Attributes().Get("message")
-	if msg.Str() != "flat record" {
-		t.Errorf("expected first flat record message, got %s", msg.Str())
+	if lr0.Body().Str() != "flat record" {
+		t.Errorf("expected first flat record body, got %s", lr0.Body().Str())
 	}
 
 	// Grouped record
@@ -238,9 +239,8 @@ func TestProcessRecords_MixedBatch(t *testing.T) {
 	// Second flat record
 	lr2 := logs.ResourceLogs().At(2).ScopeLogs().At(0).LogRecords().At(0)
 
-	msg2, _ := lr2.Attributes().Get("message")
-	if msg2.Str() != "another flat" {
-		t.Errorf("expected second flat record message, got %s", msg2.Str())
+	if lr2.Body().Str() != "another flat" {
+		t.Errorf("expected second flat record body, got %s", lr2.Body().Str())
 	}
 }
 

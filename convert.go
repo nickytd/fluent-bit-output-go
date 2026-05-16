@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/fluent/fluent-bit-go/output"
@@ -97,7 +98,7 @@ func populateLogRecord(lr plog.LogRecord, ts any, record map[any]any) {
 		}
 
 		switch key {
-		case "body":
+		case "body", "log", "message":
 			setBodyValue(lr.Body(), v)
 		case "severity_number":
 			if n, ok := toInt(v); ok {
@@ -106,6 +107,11 @@ func populateLogRecord(lr plog.LogRecord, ts any, record map[any]any) {
 		case "severity_text":
 			if s, ok := v.(string); ok {
 				lr.SetSeverityText(s)
+			}
+		case "level":
+			if s, ok := v.(string); ok {
+				lr.SetSeverityText(s)
+				lr.SetSeverityNumber(levelToSeverityNumber(s))
 			}
 		case "trace_id":
 			if s, ok := v.(string); ok {
@@ -256,5 +262,24 @@ func hexVal(b byte) byte {
 		return b - 'A' + 10
 	default:
 		return 0
+	}
+}
+
+func levelToSeverityNumber(level string) plog.SeverityNumber {
+	switch strings.ToLower(level) {
+	case "trace":
+		return plog.SeverityNumberTrace
+	case "debug":
+		return plog.SeverityNumberDebug
+	case "info":
+		return plog.SeverityNumberInfo
+	case "warn", "warning":
+		return plog.SeverityNumberWarn
+	case "error", "err":
+		return plog.SeverityNumberError
+	case "fatal", "critical", "emerg", "emergency":
+		return plog.SeverityNumberFatal
+	default:
+		return plog.SeverityNumberUnspecified
 	}
 }
