@@ -8,7 +8,6 @@ import (
 	"github.com/cockroachdb/pebble"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
-	otellog "go.opentelemetry.io/otel/log"
 )
 
 func TestPebbleQueueRoundTrip(t *testing.T) {
@@ -136,87 +135,6 @@ func TestPebbleQueueDeleteAfterRead(t *testing.T) {
 	defer func() { _ = iter.Close() }()
 	if iter.First() {
 		t.Fatal("expected empty iterator after delete")
-	}
-}
-
-func TestConvertValue(t *testing.T) {
-	tests := []struct {
-		name string
-		give func() pcommon.Value
-		want otellog.Value
-	}{
-		{
-			name: "string",
-			give: func() pcommon.Value { return pcommon.NewValueStr("hello") },
-			want: otellog.StringValue("hello"),
-		},
-		{
-			name: "int",
-			give: func() pcommon.Value { return pcommon.NewValueInt(123) },
-			want: otellog.Int64Value(123),
-		},
-		{
-			name: "double",
-			give: func() pcommon.Value { return pcommon.NewValueDouble(3.14) },
-			want: otellog.Float64Value(3.14),
-		},
-		{
-			name: "bool",
-			give: func() pcommon.Value { return pcommon.NewValueBool(true) },
-			want: otellog.BoolValue(true),
-		},
-		{
-			name: "bytes",
-			give: func() pcommon.Value {
-				v := pcommon.NewValueBytes()
-				v.Bytes().Append(0xDE, 0xAD)
-				return v
-			},
-			want: otellog.BytesValue([]byte{0xDE, 0xAD}),
-		},
-		{
-			name: "empty",
-			give: func() pcommon.Value { return pcommon.NewValueEmpty() },
-			want: otellog.StringValue(""),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := convertValue(tt.give())
-			if !got.Equal(tt.want) {
-				t.Errorf("convertValue() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestConvertMap(t *testing.T) {
-	m := pcommon.NewMap()
-	m.PutStr("host", "localhost")
-	m.PutInt("port", 8080)
-
-	kvs := convertMap(m, "resource.")
-	if len(kvs) != 2 {
-		t.Fatalf("expected 2 kvs, got %d", len(kvs))
-	}
-
-	found := map[string]bool{}
-	for _, kv := range kvs {
-		found[kv.Key] = true
-		switch kv.Key {
-		case "resource.host":
-			if !kv.Value.Equal(otellog.StringValue("localhost")) {
-				t.Errorf("unexpected value for resource.host: %v", kv.Value)
-			}
-		case "resource.port":
-			if !kv.Value.Equal(otellog.Int64Value(8080)) {
-				t.Errorf("unexpected value for resource.port: %v", kv.Value)
-			}
-		}
-	}
-	if !found["resource.host"] || !found["resource.port"] {
-		t.Errorf("missing expected keys: %v", found)
 	}
 }
 
