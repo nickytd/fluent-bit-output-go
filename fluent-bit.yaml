@@ -1,0 +1,30 @@
+service:
+  flush: 1
+  daemon: off
+  log_level: info
+
+pipeline:
+  inputs:
+    - name: dummy
+      tag: test.e2e
+      dummy: '{"message": "e2e test log", "level": "info"}'
+      samples: 1
+      processors:
+        logs:
+          - name: opentelemetry_envelope
+          - name: content_modifier
+            context: otel_resource_attributes
+            action: upsert
+            key: component.name
+            value: test.e2e
+    - name: dummy
+      tag: test
+      dummy: '{"message": "another log", "level": "info"}'
+      samples: 1
+
+  outputs:
+    - name: exit
+      match: "*"
+      flush_count: 1
+    - name: go-out
+      match: "*"
