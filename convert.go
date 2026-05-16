@@ -109,9 +109,13 @@ func populateLogRecord(lr plog.LogRecord, ts any, record map[any]any) {
 				lr.SetSeverityText(s)
 			}
 		case "level":
-			if s, ok := v.(string); ok {
+			switch s := v.(type) {
+			case string:
 				lr.SetSeverityText(s)
 				lr.SetSeverityNumber(levelToSeverityNumber(s))
+			case []byte:
+				lr.SetSeverityText(string(s))
+				lr.SetSeverityNumber(levelToSeverityNumber(string(s)))
 			}
 		case "trace_id":
 			if s, ok := v.(string); ok {
