@@ -58,3 +58,30 @@ Records between markers inherit the group's resource/scope. Records outside any 
 ## License
 
 MIT
+
+## Persistent Queue Experiments
+
+This project explores persistent buffering between Fluent Bit's flush pipeline and the OTel SDK output. Instead of writing OTLP JSON directly to stdout, log batches are serialized into an on-disk queue and consumed asynchronously by a goroutine that pushes records through the OTel SDK LoggerProvider.
+
+### Comparison
+
+| Aspect | [dque](https://github.com/joncrlsn/dque) | [Pebble](https://github.com/cockroachdb/pebble) | OTel Collector (bbolt) |
+|--------|------|--------|------------------------|
+| **Backend** | Segmented flat files + gob | LSM-tree (SSTables + WAL) | B+ tree (single file) |
+| **Serialization** | `encoding/gob` (public fields only) | Raw `[]byte` (no opinion) | Protobuf |
+| **Queue semantics** | Built-in FIFO (`Enqueue`/`DequeueBlock`) | Manual (sequence keys + iterator) | Manual (read/write index over KV) |
+| **Blocking dequeue** | Native (`DequeueBlock`) | Must implement (`sync.Cond`) | Must implement |
+| **Space reclamation** | Automatic (segment file deletion) | Automatic (leveled compaction) | Manual (bbolt compaction) |
+| **Write throughput** | Moderate (file-per-segment) | High (WAL + memtable batching) | Moderate (single-writer B+ tree) |
+| **Crash safety** | WAL per segment | WAL (configurable sync) | ACID transactions |
+| **Maintenance** | Abandoned (last commit 2024) | Active (CockroachDB production) | Active (etcd project) |
+| **Dependency weight** | Light (~3 deps) | Moderate (~15 deps) | Light (~5 deps) |
+| **Best for** | Simple prototyping | High-throughput log buffering | OTel Collector integration |
+
+### Branch Implementations
+
+| Branch | Queue Backend | Description |
+|--------|--------------|-------------|
+| [`feat/dque-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/dque-otlp-queue) | dque | Gob-serialized `QueueItem{Data []byte}` with native blocking dequeue |
+| [`feat/pebble-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/pebble-otlp-queue) | Pebble | Monotonic uint64 keys, raw byte values, `sync.Cond` signaling |
+
