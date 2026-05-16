@@ -14,6 +14,7 @@ A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as a
 
 - Go 1.26+
 - Fluent Bit (for running the plugin and e2e tests)
+- [OTel Collector](https://opentelemetry.io/docs/collector/) (`otelcol` binary, for e2e tests)
 - [golangci-lint](https://golangci-lint.run/) (for linting)
 
 ## Build
@@ -70,9 +71,11 @@ make run
 
 ```bash
 make unit-test    # unit tests
-make e2e-test     # builds .so, runs fluent-bit, validates OTLP output
+make e2e-test     # builds .so, starts OTel Collector, runs fluent-bit, validates output
 make test         # both
 ```
+
+E2E tests require `fluent-bit` and `otelcol` in PATH. They start an OTel Collector with the debug exporter, run Fluent Bit with the plugin exporting via OTLP/HTTP, and verify that log records (including resource attributes and severity) appear in the collector output.
 
 ## Architecture
 
