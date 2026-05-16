@@ -1,35 +1,14 @@
 # fluent-bit-output-go
 
-A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as a C shared library. It converts log records from Fluent Bit's pipeline into [OpenTelemetry](https://opentelemetry.io/) `plog.Logs` structures, buffers them in a persistent [Pebble](https://github.com/cockroachdb/pebble) queue, and emits them through the OpenTelemetry SDK LoggerProvider (stdout exporter).
+A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as a C shared library. It converts log records from Fluent Bit's pipeline into [OpenTelemetry](https://opentelemetry.io/) `plog.Logs` structures, buffers them in a persistent [Pebble](https://github.com/cockroachdb/pebble) queue, and exports via configurable OTLP targets.
 
 ## Features
 
 - Handles **standard flat records** — each becomes its own ResourceLogs with fields mapped as LogRecord attributes.
 - Handles **OpenTelemetry envelope log groups** — Fluent Bit's internal grouping mechanism that preserves resource and scope metadata.
-- Maps well-known OTLP fields: `body`, `severity_number`, `severity_text`, `trace_id`, `span_id`.
-- **Persistent queue** — log batches are stored in a Pebble LSM-tree database with monotonic sequence keys, surviving process restarts.
-- **Async consumer** — a background goroutine dequeues items via iterator, deserializes back to `plog.Logs`, maps each record to an OTel SDK `log.Record`, and emits via the LoggerProvider.
-
-## Architecture
-
-```
-Fluent Bit pipeline
-       │
-       ▼
-FLBPluginFlushCtx
-       │  processRecords() → plog.Logs
-       │  JSONMarshaler → []byte
-       ▼
-   Pebble DB (on-disk LSM-tree, sequence-keyed)
-       │
-       ▼
-Consumer goroutine (sync.Cond signaled)
-       │  Iterator → read + delete
-       │  JSONUnmarshaler → plog.Logs
-       │  Map to OTel SDK log.Record
-       ▼
-OTel LoggerProvider (stdout exporter)
-```
+- Maps well-known fields: `body`/`log`/`message` → LogRecord body, `level` → severity, `severity_number`, `severity_text`, `trace_id`, `span_id`.
+- **Persistent queue** via Pebble LSM-tree — monotonic sequence keys provide FIFO ordering with crash recovery.
+- **Configurable export**: stdout (OTLP JSON), OTLP/HTTP, or OTLP/gRPC.
 
 ## Requirements
 
@@ -58,7 +37,33 @@ pipeline:
   outputs:
     - name: go-out
       match: "*"
-      queue_dir: /tmp/fluent-bit-pebble   # optional, defaults to /tmp/fluent-bit-pebble
+      # queue_dir: /tmp/fluent-bit-pebble
+      # otlp_grpc: localhost:4317
+      # otlp_http: http://localhost:4318
+```
+
+### Configuration Keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `id` | auto-increment | Instance identifier for logging |
+| `queue_dir` | `/tmp/fluent-bit-pebble` | Directory for Pebble database storage |
+| `otlp_grpc` | *(none)* | OTLP gRPC endpoint (e.g. `localhost:4317`) |
+| `otlp_http` | *(none)* | OTLP HTTP endpoint (e.g. `http://localhost:4318`) |
+
+If neither `otlp_grpc` nor `otlp_http` is set, logs are emitted as OTLP JSON to stdout. Only one of `otlp_grpc`/`otlp_http` can be set.
+
+## Testing with OTel Collector
+
+An example collector config is provided in `otel-collector.yaml`:
+
+```bash
+# Start the collector (receives on gRPC:4317 and HTTP:4318, prints via debug exporter)
+otelcol --config otel-collector.yaml
+
+# In another terminal, run with gRPC export:
+# Uncomment otlp_grpc in fluent-bit.yaml, then:
+make run
 ```
 
 ## Testing
@@ -69,15 +74,24 @@ make e2e-test     # builds .so, runs fluent-bit, validates OTLP output
 make test         # both
 ```
 
+## Architecture
+
+```
+Fluent Bit → FLBPluginFlushCtx → processRecords() → plog.Logs
+    → ProtoMarshaler → Pebble DB (uint64 key, FIFO)
+    → consumer goroutine (sync.Cond) → ProtoUnmarshaler → exporter
+                                                            ├── stdout (OTLP JSON)
+                                                            ├── OTLP/HTTP (plogotlp)
+                                                            └── OTLP/gRPC (plogotlp)
+```
+
+- **Queue**: Pebble LSM-tree with big-endian uint64 keys for lexicographic FIFO ordering. `pebble.NoSync` writes (WAL provides crash recovery).
+- **Consumer**: `sync.Cond` wait/signal loop — producer signals after `Set`, consumer iterates and deletes processed entries.
+- **Serialization**: `plog.ProtoMarshaler`/`ProtoUnmarshaler` for compact binary queue storage.
+
 ## How It Works
 
-1. **Flush** — `FLBPluginFlushCtx` decodes incoming records, builds `plog.Logs`, marshals to OTLP JSON, and writes to Pebble with a monotonic uint64 key (big-endian for lexicographic FIFO order).
-
-2. **Queue** — Pebble stores each batch as a raw `[]byte` value (no gob/protobuf wrapper needed). A `sync.Cond` signals the consumer when new items arrive.
-
-3. **Consumer** — a background goroutine waits on the condition variable, then iterates the DB from `First()`, processing and deleting each entry. Each OTLP JSON batch is unmarshaled back into `plog.Logs`, then each LogRecord is mapped to an OTel SDK `log.Record` and emitted through the LoggerProvider.
-
-4. **Output** — the OTel SDK stdout exporter writes the final log records to stdout.
+Plugin operational logs go to **stderr** using a custom `slog.Handler` that matches Fluent Bit's log format.
 
 The plugin detects OTel envelope groups via special marker timestamps:
 - `0xFFFFFFFF` → group start (carries resource and scope metadata)
