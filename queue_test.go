@@ -30,7 +30,7 @@ func TestPebbleQueueRoundTrip(t *testing.T) {
 	lr.SetTimestamp(pcommon.NewTimestampFromTime(time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)))
 	lr.Attributes().PutStr("env", "test")
 
-	marshaler := &plog.JSONMarshaler{}
+	marshaler := &plog.ProtoMarshaler{}
 	data, err := marshaler.MarshalLogs(logs)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -48,7 +48,7 @@ func TestPebbleQueueRoundTrip(t *testing.T) {
 	}
 	defer func() { _ = closer.Close() }()
 
-	unmarshaler := &plog.JSONUnmarshaler{}
+	unmarshaler := &plog.ProtoUnmarshaler{}
 	got, err := unmarshaler.UnmarshalLogs(val)
 	if err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -234,7 +234,7 @@ func TestQueueIntegration(t *testing.T) {
 	lr.Body().SetStr("integration test")
 	lr.SetSeverityNumber(plog.SeverityNumberWarn)
 
-	marshaler := &plog.JSONMarshaler{}
+	marshaler := &plog.ProtoMarshaler{}
 	data, err := marshaler.MarshalLogs(logs)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -255,7 +255,7 @@ func TestQueueIntegration(t *testing.T) {
 	defer func() { _ = iter.Close() }()
 
 	count := 0
-	unmarshaler := &plog.JSONUnmarshaler{}
+	unmarshaler := &plog.ProtoUnmarshaler{}
 	for iter.First(); iter.Valid(); iter.Next() {
 		got, err := unmarshaler.UnmarshalLogs(iter.Value())
 		if err != nil {

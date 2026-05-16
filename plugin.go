@@ -71,7 +71,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		return output.FLB_OK
 	}
 
-	marshaler := new(plog.JSONMarshaler)
+	marshaler := new(plog.ProtoMarshaler)
 	b, err := marshaler.MarshalLogs(logs)
 	if err != nil {
 		inst.logger.Error("marshal error", "err", err)

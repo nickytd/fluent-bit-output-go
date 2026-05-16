@@ -29,7 +29,7 @@ func runConsumer(ctx context.Context, done chan struct{}) {
 	defer func() { _ = provider.Shutdown(context.Background()) }()
 
 	logger := provider.Logger("fluent-bit-go-out")
-	unmarshaler := &plog.JSONUnmarshaler{}
+	unmarshaler := &plog.ProtoUnmarshaler{}
 
 	for {
 		mu.Lock()
