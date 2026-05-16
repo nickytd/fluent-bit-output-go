@@ -36,7 +36,31 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	if queueDir == "" {
 		queueDir = "/tmp/fluent-bit-pebble"
 	}
-	if err := initQueue(queueDir); err != nil {
+
+	otlpHTTP := output.FLBPluginConfigKey(plugin, "otlp_http")
+	otlpGRPC := output.FLBPluginConfigKey(plugin, "otlp_grpc")
+
+	if otlpHTTP != "" && otlpGRPC != "" {
+		slog.New(baseHandler).Error("only one of otlp_http or otlp_grpc can be set")
+		return output.FLB_ERROR
+	}
+
+	var exp exporter
+	switch {
+	case otlpGRPC != "":
+		var err error
+		exp, err = newGRPCExporter(otlpGRPC)
+		if err != nil {
+			slog.New(baseHandler).Error("failed to create grpc exporter", "err", err)
+			return output.FLB_ERROR
+		}
+	case otlpHTTP != "":
+		exp = newHTTPExporter(otlpHTTP)
+	default:
+		exp = newStdoutExporter()
+	}
+
+	if err := initQueue(queueDir, exp); err != nil {
 		slog.New(baseHandler).Error("failed to init queue", "err", err)
 		return output.FLB_ERROR
 	}

@@ -21,7 +21,7 @@ var (
 	queueDone chan struct{}
 )
 
-func initQueue(dir string) error {
+func initQueue(dir string, exp exporter) error {
 	var initErr error
 	queueOnce.Do(func() {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -39,7 +39,7 @@ func initQueue(dir string) error {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancelFn = cancel
-		go runConsumer(ctx, queueDone)
+		go runConsumer(ctx, exp, queueDone)
 	})
 	return initErr
 }

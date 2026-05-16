@@ -2,20 +2,18 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"os"
 	"slices"
 
 	"github.com/cockroachdb/pebble"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-func runConsumer(ctx context.Context, done chan struct{}) {
+func runConsumer(ctx context.Context, exp exporter, done chan struct{}) {
 	defer close(done)
+	defer func() { _ = exp.Shutdown(ctx) }()
 
 	unmarshaler := &plog.ProtoUnmarshaler{}
-	marshaler := &plog.JSONMarshaler{}
 
 	for {
 		mu.Lock()
@@ -45,14 +43,9 @@ func runConsumer(ctx context.Context, done chan struct{}) {
 				continue
 			}
 
-			b, err := marshaler.MarshalLogs(logs)
-			if err != nil {
-				slog.New(baseHandler).Error("consumer: marshal error", "err", err)
-				_ = db.Delete(key, pebble.NoSync)
-				continue
+			if err := exp.Export(ctx, logs); err != nil {
+				slog.New(baseHandler).Error("consumer: export error", "err", err)
 			}
-
-			fmt.Fprintln(os.Stdout, string(b))
 			_ = db.Delete(key, pebble.NoSync)
 		}
 		_ = iter.Close()

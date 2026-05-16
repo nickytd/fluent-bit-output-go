@@ -28,3 +28,5 @@ pipeline:
       flush_count: 1
     - name: go-out
       match: "*"
+      # otlp_grpc: localhost:4317
+      # otlp_http: http://localhost:4318
