@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -21,7 +22,7 @@ var (
 	queueDone chan struct{}
 )
 
-func initQueue(dir string, exp exporter) error {
+func initQueue(logger *slog.Logger, dir string, exp exporter) error {
 	var initErr error
 	queueOnce.Do(func() {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -39,7 +40,7 @@ func initQueue(dir string, exp exporter) error {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancelFn = cancel
-		go runConsumer(ctx, exp, queueDone)
+		go runConsumer(ctx, logger, exp, queueDone)
 	})
 	return initErr
 }

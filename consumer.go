@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-func runConsumer(ctx context.Context, exp exporter, done chan struct{}) {
+func runConsumer(ctx context.Context, logger *slog.Logger, exp exporter, done chan struct{}) {
 	defer close(done)
 	defer func() { _ = exp.Shutdown(ctx) }()
 
@@ -28,7 +28,7 @@ func runConsumer(ctx context.Context, exp exporter, done chan struct{}) {
 
 		iter, err := db.NewIter(nil)
 		if err != nil {
-			slog.New(baseHandler).Error("consumer: new iter error", "err", err)
+			logger.Error("consumer: new iter error", "err", err)
 			return
 		}
 
@@ -38,13 +38,13 @@ func runConsumer(ctx context.Context, exp exporter, done chan struct{}) {
 
 			logs, err := unmarshaler.UnmarshalLogs(data)
 			if err != nil {
-				slog.New(baseHandler).Error("consumer: unmarshal error", "err", err)
+				logger.Error("consumer: unmarshal error", "err", err)
 				_ = db.Delete(key, pebble.NoSync)
 				continue
 			}
 
 			if err := exp.Export(ctx, logs); err != nil {
-				slog.New(baseHandler).Error("consumer: export error", "err", err)
+				logger.Error("consumer: export error", "err", err)
 			}
 			_ = db.Delete(key, pebble.NoSync)
 		}

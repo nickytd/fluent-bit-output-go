@@ -64,7 +64,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		exp = newStdoutExporter()
 	}
 
-	if err := initQueue(queueDir, exp); err != nil {
+	if err := initQueue(inst.logger, queueDir, exp); err != nil {
 		inst.logger.Error("failed to init queue", "err", err)
 		return output.FLB_ERROR
 	}
