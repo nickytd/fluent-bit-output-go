@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 	"log/slog"
-	"slices"
 
-	"github.com/cockroachdb/pebble"
+	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
@@ -26,37 +25,49 @@ func runConsumer(ctx context.Context, logger *slog.Logger, exp exporter, done ch
 			return
 		}
 
-		iter, err := db.NewIter(nil)
-		if err != nil {
-			logger.Error("consumer: new iter error", "err", err)
-			return
-		}
+		var keys [][]byte
+		_ = db.View(func(tx *bolt.Tx) error {
+			c := tx.Bucket(bucketName).Cursor()
+			for k, v := c.First(); k != nil; k, v = c.Next() {
+				key := make([]byte, len(k))
+				copy(key, k)
+				data := make([]byte, len(v))
+				copy(data, v)
 
-		for iter.First(); iter.Valid(); iter.Next() {
-			key := slices.Clone(iter.Key())
-			data := slices.Clone(iter.Value())
+				logs, err := unmarshaler.UnmarshalLogs(data)
+				if err != nil {
+					logger.Error("consumer: unmarshal error", "err", err)
+					keys = append(keys, key)
+					continue
+				}
 
-			logs, err := unmarshaler.UnmarshalLogs(data)
-			if err != nil {
-				logger.Error("consumer: unmarshal error", "err", err)
-				_ = db.Delete(key, pebble.NoSync)
-				continue
+				if err := exp.Export(ctx, logs); err != nil {
+					logger.Error("consumer: export error", "err", err)
+				}
+				keys = append(keys, key)
 			}
+			return nil
+		})
 
-			if err := exp.Export(ctx, logs); err != nil {
-				logger.Error("consumer: export error", "err", err)
-			}
-			_ = db.Delete(key, pebble.NoSync)
+		if len(keys) > 0 {
+			_ = db.Update(func(tx *bolt.Tx) error {
+				b := tx.Bucket(bucketName)
+				for _, k := range keys {
+					_ = b.Delete(k)
+				}
+				return nil
+			})
 		}
-		_ = iter.Close()
 	}
 }
 
 func dbHasItems() bool {
-	iter, err := db.NewIter(nil)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = iter.Close() }()
-	return iter.First()
+	var hasItems bool
+	_ = db.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket(bucketName).Cursor()
+		k, _ := c.First()
+		hasItems = k != nil
+		return nil
+	})
+	return hasItems
 }

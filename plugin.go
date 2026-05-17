@@ -38,7 +38,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	}
 	queueDir := output.FLBPluginConfigKey(plugin, "queue_dir")
 	if queueDir == "" {
-		queueDir = "/tmp/fluent-bit-pebble"
+		queueDir = "/tmp/fluent-bit-bbolt"
 	}
 
 	otlpHTTP := output.FLBPluginConfigKey(plugin, "otlp_http")

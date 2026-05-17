@@ -2,21 +2,34 @@ package main
 
 import (
 	"encoding/binary"
+	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/cockroachdb/pebble"
+	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-func TestPebbleQueueRoundTrip(t *testing.T) {
+func openTestDB(t *testing.T) *bolt.DB {
+	t.Helper()
 	dir := t.TempDir()
-	d, err := pebble.Open(dir, &pebble.Options{})
+	d, err := bolt.Open(filepath.Join(dir, "test.db"), 0o600, nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer func() { _ = d.Close() }()
+	t.Cleanup(func() { _ = d.Close() })
+	if err := d.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte("logs"))
+		return err
+	}); err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+	return d
+}
+
+func TestBboltQueueRoundTrip(t *testing.T) {
+	d := openTestDB(t)
 
 	logs := plog.NewLogs()
 	rl := logs.ResourceLogs().AppendEmpty()
@@ -24,7 +37,7 @@ func TestPebbleQueueRoundTrip(t *testing.T) {
 	sl := rl.ScopeLogs().AppendEmpty()
 	sl.Scope().SetName("my-lib")
 	lr := sl.LogRecords().AppendEmpty()
-	lr.Body().SetStr("hello pebble")
+	lr.Body().SetStr("hello bbolt")
 	lr.SetSeverityNumber(plog.SeverityNumberInfo)
 	lr.SetTimestamp(pcommon.NewTimestampFromTime(time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)))
 	lr.Attributes().PutStr("env", "test")
@@ -37,15 +50,21 @@ func TestPebbleQueueRoundTrip(t *testing.T) {
 
 	var key [8]byte
 	binary.BigEndian.PutUint64(key[:], 1)
-	if err := d.Set(key[:], data, pebble.Sync); err != nil {
-		t.Fatalf("set: %v", err)
+	if err := d.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte("logs")).Put(key[:], data)
+	}); err != nil {
+		t.Fatalf("put: %v", err)
 	}
 
-	val, closer, err := d.Get(key[:])
-	if err != nil {
+	var val []byte
+	if err := d.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket([]byte("logs")).Get(key[:])
+		val = make([]byte, len(v))
+		copy(val, v)
+		return nil
+	}); err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	defer func() { _ = closer.Close() }()
 
 	unmarshaler := &plog.ProtoUnmarshaler{}
 	got, err := unmarshaler.UnmarshalLogs(val)
@@ -54,7 +73,7 @@ func TestPebbleQueueRoundTrip(t *testing.T) {
 	}
 
 	gotLR := got.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
-	if gotLR.Body().Str() != "hello pebble" {
+	if gotLR.Body().Str() != "hello bbolt" {
 		t.Fatalf("body mismatch: %s", gotLR.Body().Str())
 	}
 	if gotLR.SeverityNumber() != plog.SeverityNumberInfo {
@@ -66,33 +85,32 @@ func TestPebbleQueueRoundTrip(t *testing.T) {
 	}
 }
 
-func TestPebbleQueueOrdering(t *testing.T) {
-	dir := t.TempDir()
-	d, err := pebble.Open(dir, &pebble.Options{})
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer func() { _ = d.Close() }()
+func TestBboltQueueOrdering(t *testing.T) {
+	d := openTestDB(t)
 
-	for i := range uint64(10) {
-		var key [8]byte
-		binary.BigEndian.PutUint64(key[:], i+1)
-		val := []byte{byte(i + 1)}
-		if err := d.Set(key[:], val, pebble.Sync); err != nil {
-			t.Fatalf("set %d: %v", i, err)
+	if err := d.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("logs"))
+		for i := range uint64(10) {
+			var key [8]byte
+			binary.BigEndian.PutUint64(key[:], i+1)
+			if err := b.Put(key[:], []byte{byte(i + 1)}); err != nil {
+				return err
+			}
 		}
+		return nil
+	}); err != nil {
+		t.Fatalf("put: %v", err)
 	}
-
-	iter, err := d.NewIter(nil)
-	if err != nil {
-		t.Fatalf("new iter: %v", err)
-	}
-	defer func() { _ = iter.Close() }()
 
 	var order []uint64
-	for iter.First(); iter.Valid(); iter.Next() {
-		seq := binary.BigEndian.Uint64(iter.Key())
-		order = append(order, seq)
+	if err := d.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket([]byte("logs")).Cursor()
+		for k, _ := c.First(); k != nil; k, _ = c.Next() {
+			order = append(order, binary.BigEndian.Uint64(k))
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("view: %v", err)
 	}
 
 	if len(order) != 10 {
@@ -105,46 +123,48 @@ func TestPebbleQueueOrdering(t *testing.T) {
 	}
 }
 
-func TestPebbleQueueDeleteAfterRead(t *testing.T) {
-	dir := t.TempDir()
-	d, err := pebble.Open(dir, &pebble.Options{})
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer func() { _ = d.Close() }()
+func TestBboltQueueDeleteAfterRead(t *testing.T) {
+	d := openTestDB(t)
 
 	var key [8]byte
 	binary.BigEndian.PutUint64(key[:], 1)
-	if err := d.Set(key[:], []byte("data"), pebble.Sync); err != nil {
-		t.Fatalf("set: %v", err)
+
+	if err := d.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte("logs")).Put(key[:], []byte("data"))
+	}); err != nil {
+		t.Fatalf("put: %v", err)
 	}
 
-	if err := d.Delete(key[:], pebble.Sync); err != nil {
+	if err := d.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte("logs")).Delete(key[:])
+	}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 
-	_, _, err = d.Get(key[:])
-	if err != pebble.ErrNotFound {
-		t.Fatalf("expected ErrNotFound, got: %v", err)
+	if err := d.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket([]byte("logs")).Get(key[:])
+		if v != nil {
+			t.Fatal("expected nil after delete")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("get: %v", err)
 	}
 
-	iter, err := d.NewIter(nil)
-	if err != nil {
-		t.Fatalf("new iter: %v", err)
-	}
-	defer func() { _ = iter.Close() }()
-	if iter.First() {
-		t.Fatal("expected empty iterator after delete")
+	if err := d.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket([]byte("logs")).Cursor()
+		k, _ := c.First()
+		if k != nil {
+			t.Fatal("expected empty bucket after delete")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("cursor: %v", err)
 	}
 }
 
 func TestQueueIntegration(t *testing.T) {
-	dir := t.TempDir()
-	d, err := pebble.Open(dir, &pebble.Options{})
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	defer func() { _ = d.Close() }()
+	d := openTestDB(t)
 
 	logs := plog.NewLogs()
 	rl := logs.ResourceLogs().AppendEmpty()
@@ -158,36 +178,43 @@ func TestQueueIntegration(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 
-	for i := range uint64(5) {
-		var key [8]byte
-		binary.BigEndian.PutUint64(key[:], i+1)
-		if err := d.Set(key[:], data, pebble.Sync); err != nil {
-			t.Fatalf("enqueue %d: %v", i, err)
+	if err := d.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("logs"))
+		for i := range uint64(5) {
+			var key [8]byte
+			binary.BigEndian.PutUint64(key[:], i+1)
+			if err := b.Put(key[:], data); err != nil {
+				return err
+			}
 		}
+		return nil
+	}); err != nil {
+		t.Fatalf("enqueue: %v", err)
 	}
-
-	iter, err := d.NewIter(nil)
-	if err != nil {
-		t.Fatalf("new iter: %v", err)
-	}
-	defer func() { _ = iter.Close() }()
 
 	count := 0
 	unmarshaler := &plog.ProtoUnmarshaler{}
-	for iter.First(); iter.Valid(); iter.Next() {
-		got, err := unmarshaler.UnmarshalLogs(iter.Value())
-		if err != nil {
-			t.Fatalf("unmarshal: %v", err)
+	if err := d.View(func(tx *bolt.Tx) error {
+		c := tx.Bucket([]byte("logs")).Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			got, err := unmarshaler.UnmarshalLogs(v)
+			if err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			gotLR := got.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+			if gotLR.Body().Str() != "integration test" {
+				t.Fatalf("body mismatch: %s", gotLR.Body().Str())
+			}
+			if gotLR.SeverityNumber() != plog.SeverityNumberWarn {
+				t.Fatalf("severity mismatch: %d", gotLR.SeverityNumber())
+			}
+			count++
 		}
-		gotLR := got.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
-		if gotLR.Body().Str() != "integration test" {
-			t.Fatalf("body mismatch: %s", gotLR.Body().Str())
-		}
-		if gotLR.SeverityNumber() != plog.SeverityNumberWarn {
-			t.Fatalf("severity mismatch: %d", gotLR.SeverityNumber())
-		}
-		count++
+		return nil
+	}); err != nil {
+		t.Fatalf("view: %v", err)
 	}
+
 	if count != 5 {
 		t.Fatalf("expected 5 items, got %d", count)
 	}
