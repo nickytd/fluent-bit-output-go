@@ -31,8 +31,8 @@ func (e *stdoutExporter) Export(_ context.Context, logs plog.Logs) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	fmt.Fprintln(os.Stdout, string(b))
-	return nil
+	_, err = fmt.Fprintln(os.Stdout, string(b))
+	return err
 }
 
 func (e *stdoutExporter) Shutdown(_ context.Context) error {

@@ -29,9 +29,13 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	id := output.FLBPluginConfigKey(plugin, "id")
 	if id == "" {
 		id = fmt.Sprintf("%d", instanceCount)
+		instanceCount++
 	}
-	instanceCount++
 
+	inst := &pluginInstance{
+		id:     id,
+		logger: slog.New(baseHandler.WithGroup(id)),
+	}
 	queueDir := output.FLBPluginConfigKey(plugin, "queue_dir")
 	if queueDir == "" {
 		queueDir = "/tmp/fluent-bit-pebble"
@@ -41,7 +45,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	otlpGRPC := output.FLBPluginConfigKey(plugin, "otlp_grpc")
 
 	if otlpHTTP != "" && otlpGRPC != "" {
-		slog.New(baseHandler).Error("only one of otlp_http or otlp_grpc can be set")
+		inst.logger.Error("only one of otlp_http or otlp_grpc can be set")
 		return output.FLB_ERROR
 	}
 
@@ -51,7 +55,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		var err error
 		exp, err = newGRPCExporter(otlpGRPC)
 		if err != nil {
-			slog.New(baseHandler).Error("failed to create grpc exporter", "err", err)
+			inst.logger.Error("failed to create grpc exporter", "err", err)
 			return output.FLB_ERROR
 		}
 	case otlpHTTP != "":
@@ -61,14 +65,10 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	}
 
 	if err := initQueue(queueDir, exp); err != nil {
-		slog.New(baseHandler).Error("failed to init queue", "err", err)
+		inst.logger.Error("failed to init queue", "err", err)
 		return output.FLB_ERROR
 	}
 
-	inst := &pluginInstance{
-		id:     id,
-		logger: slog.New(baseHandler.WithGroup(id)),
-	}
 	inst.logger.Info("initialized instance")
 	output.FLBPluginSetContext(plugin, inst)
 	return output.FLB_OK
