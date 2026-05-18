@@ -1,13 +1,13 @@
 # fluent-bit-output-go
 
-A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as a C shared library. It converts log records from Fluent Bit's pipeline into [OpenTelemetry](https://opentelemetry.io/) `plog.Logs` structures, buffers them in a persistent [Pebble](https://github.com/cockroachdb/pebble) queue, and exports via configurable OTLP targets.
+A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as a C shared library. It converts log records from Fluent Bit's pipeline into [OpenTelemetry](https://opentelemetry.io/) `plog.Logs` structures, buffers them in a persistent [bbolt](https://github.com/etcd-io/bbolt) queue, and exports via configurable OTLP targets.
 
 ## Features
 
 - Handles **standard flat records** — each becomes its own ResourceLogs with fields mapped as LogRecord attributes.
 - Handles **OpenTelemetry envelope log groups** — Fluent Bit's internal grouping mechanism that preserves resource and scope metadata.
 - Maps well-known fields: `body`/`log`/`message` → LogRecord body, `level` → severity, `severity_number`, `severity_text`, `trace_id`, `span_id`.
-- **Persistent queue** via Pebble LSM-tree — monotonic sequence keys provide FIFO ordering with crash recovery.
+- **Persistent queue** via bbolt B+ tree — monotonic sequence keys provide FIFO ordering with ACID transactions for crash recovery.
 - **Configurable export**: stdout (OTLP JSON), OTLP/HTTP, or OTLP/gRPC.
 
 ## Requirements
@@ -38,7 +38,7 @@ pipeline:
   outputs:
     - name: go-out
       match: "*"
-      # queue_dir: /tmp/fluent-bit-pebble
+      # queue_dir: /tmp/fluent-bit-bbolt
       # otlp_grpc: localhost:4317
       # otlp_http: http://localhost:4318
 ```
@@ -48,7 +48,7 @@ pipeline:
 | Key | Default | Description |
 |-----|---------|-------------|
 | `id` | auto-increment | Instance identifier for logging |
-| `queue_dir` | `/tmp/fluent-bit-pebble` | Directory for Pebble database storage |
+| `queue_dir` | `/tmp/fluent-bit-bbolt` | Directory for the `queue.db` bbolt file |
 | `otlp_grpc` | *(none)* | OTLP gRPC endpoint (e.g. `localhost:4317`) |
 | `otlp_http` | *(none)* | OTLP HTTP endpoint (e.g. `http://localhost:4318`) |
 
@@ -81,15 +81,15 @@ E2E tests require `fluent-bit` and `otelcol` in PATH. They start an OTel Collect
 
 ```
 Fluent Bit → FLBPluginFlushCtx → processRecords() → plog.Logs
-    → ProtoMarshaler → Pebble DB (uint64 key, FIFO)
+    → ProtoMarshaler → bbolt DB (uint64 key, single bucket)
     → consumer goroutine (sync.Cond) → ProtoUnmarshaler → exporter
                                                             ├── stdout (OTLP JSON)
                                                             ├── OTLP/HTTP (plogotlp)
                                                             └── OTLP/gRPC (plogotlp)
 ```
 
-- **Queue**: Pebble LSM-tree with big-endian uint64 keys for lexicographic FIFO ordering. `pebble.NoSync` writes (WAL provides crash recovery).
-- **Consumer**: `sync.Cond` wait/signal loop — producer signals after `Set`, consumer iterates and deletes processed entries.
+- **Queue**: bbolt single-file B+ tree (`queue.db`) with a `logs` bucket. Big-endian uint64 keys give lexicographic FIFO ordering. Each `Update` is an ACID transaction.
+- **Consumer**: `sync.Cond` wait/signal loop — producer signals after `Put`, consumer iterates the bucket and deletes processed entries.
 - **Serialization**: `plog.ProtoMarshaler`/`ProtoUnmarshaler` for compact binary queue storage.
 
 ## How It Works
@@ -131,4 +131,4 @@ This project explores persistent buffering between Fluent Bit's flush pipeline a
 |--------|--------------|-------------|
 | [`feat/dque-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/dque-otlp-queue) | dque | Gob-serialized `QueueItem{Data []byte}` with native blocking dequeue |
 | [`feat/pebble-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/pebble-otlp-queue) | Pebble | Monotonic uint64 keys, raw byte values, `sync.Cond` signaling |
-
+| [`feat/bbolt-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/bbolt-otlp-queue) | bbolt | Single-file B+ tree (etcd's fork of BoltDB), monotonic uint64 keys, `sync.Cond` signaling |
