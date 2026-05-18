@@ -84,4 +84,5 @@ This project explores persistent buffering between Fluent Bit's flush pipeline a
 |--------|--------------|-------------|
 | [`feat/dque-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/dque-otlp-queue) | dque | Gob-serialized `QueueItem{Data []byte}` with native blocking dequeue |
 | [`feat/pebble-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/pebble-otlp-queue) | Pebble | Monotonic uint64 keys, raw byte values, `sync.Cond` signaling |
+| [`feat/bbolt-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/bbolt-otlp-queue) | bbolt | Single-file B+ tree (etcd's fork of BoltDB), monotonic uint64 keys, `sync.Cond` signaling |
 
