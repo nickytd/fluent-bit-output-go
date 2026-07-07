@@ -127,7 +127,9 @@ metadata:
 spec:
   initContainers:
     - name: install-plugin
-      image: ghcr.io/nickytd/fluent-bit-output-go:latest
+      # Pin to a released tag for reproducible deployments. Also available
+      # as :latest (tracks the newest tag), :v0 (major), and :v0.1 (minor).
+      image: ghcr.io/nickytd/fluent-bit-output-go:v0.1.0
       volumeMounts:
         - name: plugin
           mountPath: /output

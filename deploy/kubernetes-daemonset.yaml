@@ -42,7 +42,7 @@ spec:
         # Copies /plugin/go-out.so from the plugin image onto the shared
         # emptyDir at /output, which fluent-bit then loads with `-e`.
         - name: install-plugin
-          image: ghcr.io/nickytd/fluent-bit-output-go:latest
+          image: ghcr.io/nickytd/fluent-bit-output-go:v0.1.0
           imagePullPolicy: IfNotPresent
           volumeMounts:
             - name: plugin
