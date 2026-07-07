@@ -17,9 +17,9 @@ import (
 
 var _ = Describe("Fluent Bit output plugin", func() {
 	var (
-		soPath         string
-		pluginDir      string
-		collectorOut   string
+		soPath       string
+		pluginDir    string
+		collectorOut string
 	)
 
 	BeforeEach(func() {
