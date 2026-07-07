@@ -1,0 +1,24 @@
+# Anything not needed inside the build context.
+.git
+.github
+.claude
+*.md
+!go.mod
+
+# Build outputs / IDE cruft
+bin/
+*.so
+*.h
+*.dylib
+queue-data/
+
+# Local editor / OS files
+.DS_Store
+
+# Local dev configs that shouldn't influence image contents
+otel-collector.yaml
+fluent-bit.yaml
+Makefile
+
+# The stray host-side Mach-O binary in the working tree; not needed in build
+fluent-bit-output-go
