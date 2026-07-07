@@ -1,4 +1,4 @@
-package main
+package queue
 
 import (
 	"encoding/binary"
@@ -220,8 +220,8 @@ func TestQueueIntegration(t *testing.T) {
 	}
 }
 
-// seedWriteSeqFromDB mirrors the reseed step inside initQueue's sync.Once so
-// the restart path can be tested without touching package-level state.
+// seedWriteSeqFromDB mirrors the reseed step inside Init's sync.Once so the
+// restart path can be tested without touching package-level state.
 func seedWriteSeqFromDB(t *testing.T, d *bolt.DB) uint64 {
 	t.Helper()
 	var seq uint64

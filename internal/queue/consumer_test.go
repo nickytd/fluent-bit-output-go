@@ -1,4 +1,4 @@
-package main
+package queue
 
 import (
 	"context"
@@ -114,7 +114,7 @@ func quietLogger() *slog.Logger {
 }
 
 // TestConsumerPreservesKeyOnExportError is the regression test for fix #2.
-// Before the fix, consumer.go:47 appended the bbolt key to the delete list
+// Before the fix, the consumer appended the bbolt key to the delete list
 // regardless of Export's error, so a failing endpoint would silently drop
 // data. This test enqueues one payload, runs the consumer with an exporter
 // that fails 3 times then succeeds, and asserts the key survives every
@@ -255,8 +255,3 @@ func TestConsumerDeletesUnmarshalablePayload(t *testing.T) {
 		t.Fatalf("corrupt payload must not reach Export, got %d calls", exp.callCount())
 	}
 }
-
-// Guard against uninitialized-atomic warnings from race detector on writeSeq
-// being read+written across tests. The test fixture already resets it in
-// installTestQueue; this is a compile-time reminder that atomic.Uint64 is
-// zero-value-safe.

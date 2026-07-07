@@ -1,3 +1,8 @@
+// Package main is the cgo entry point loaded by Fluent Bit via `-e`. The
+// //export directives below produce the C-visible symbols Fluent Bit looks
+// for in the compiled shared library. All implementation lives under
+// internal/ — this file only decodes the incoming msgpack, hands off to the
+// convert package, and pushes the result onto the queue.
 package main
 
 import (
@@ -8,9 +13,18 @@ import (
 
 	"github.com/fluent/fluent-bit-go/output"
 	"go.opentelemetry.io/collector/pdata/plog"
+
+	"github.com/nickytd/fluent-bit-output-go/internal/convert"
+	"github.com/nickytd/fluent-bit-output-go/internal/exporter"
+	"github.com/nickytd/fluent-bit-output-go/internal/flblog"
+	"github.com/nickytd/fluent-bit-output-go/internal/queue"
 )
 
 const pluginName = "go-out"
+
+// baseHandler is the slog.Handler used for both instance-scoped and
+// plugin-scoped log lines. Built once at load time.
+var baseHandler = flblog.NewStderrHandler(pluginName)
 
 var instanceCount int
 
@@ -49,22 +63,22 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		return output.FLB_ERROR
 	}
 
-	var exp exporter
+	var exp exporter.Exporter
 	switch {
 	case otlpGRPC != "":
 		var err error
-		exp, err = newGRPCExporter(otlpGRPC)
+		exp, err = exporter.NewGRPC(otlpGRPC)
 		if err != nil {
 			inst.logger.Error("failed to create grpc exporter", "err", err)
 			return output.FLB_ERROR
 		}
 	case otlpHTTP != "":
-		exp = newHTTPExporter(otlpHTTP)
+		exp = exporter.NewHTTP(otlpHTTP)
 	default:
-		exp = newStdoutExporter()
+		exp = exporter.NewStdout()
 	}
 
-	if err := initQueue(inst.logger, queueDir, exp); err != nil {
+	if err := queue.Init(inst.logger, queueDir, exp); err != nil {
 		inst.logger.Error("failed to init queue", "err", err)
 		return output.FLB_ERROR
 	}
@@ -79,16 +93,16 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 	inst := output.FLBPluginGetContext(ctx).(*pluginInstance)
 	dec := output.NewDecoder(data, int(length))
 
-	var records []decodedRecord
+	var records []convert.DecodedRecord
 	for {
 		ret, ts, record := output.GetRecord(dec)
 		if ret != 0 {
 			break
 		}
-		records = append(records, decodedRecord{Timestamp: ts, Record: record})
+		records = append(records, convert.DecodedRecord{Timestamp: ts, Record: record})
 	}
 
-	logs := processRecords(records)
+	logs := convert.ProcessRecords(records)
 
 	// Possible when a flush contains only envelope markers with no log records.
 	if logs.ResourceLogs().Len() == 0 {
@@ -102,7 +116,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		return output.FLB_ERROR
 	}
 
-	if err := enqueue(b); err != nil {
+	if err := queue.Enqueue(b); err != nil {
 		inst.logger.Error("enqueue error", "err", err)
 		return output.FLB_RETRY
 	}
@@ -118,7 +132,7 @@ func FLBPluginExitCtx(ctx unsafe.Pointer) int {
 
 //export FLBPluginUnregister
 func FLBPluginUnregister(def unsafe.Pointer) {
-	shutdownQueue()
+	queue.Shutdown()
 	slog.New(baseHandler).Info("unregistering plugin")
 	output.FLBPluginUnregister(def)
 }

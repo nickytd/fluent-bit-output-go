@@ -1,4 +1,4 @@
-package main
+package convert
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestProcessRecords_StandardFlatRecord(t *testing.T) {
-	records := []decodedRecord{
+	records := []DecodedRecord{
 		{
 			Timestamp: output.FLBTime{Time: time.Unix(1700000000, 0)},
 			Record: map[any]any{
@@ -20,7 +20,7 @@ func TestProcessRecords_StandardFlatRecord(t *testing.T) {
 		},
 	}
 
-	logs := processRecords(records)
+	logs := ProcessRecords(records)
 
 	if logs.ResourceLogs().Len() != 1 {
 		t.Fatalf("expected 1 ResourceLogs, got %d", logs.ResourceLogs().Len())
@@ -55,7 +55,7 @@ func TestProcessRecords_StandardFlatRecord(t *testing.T) {
 }
 
 func TestProcessRecords_OTelFields(t *testing.T) {
-	records := []decodedRecord{
+	records := []DecodedRecord{
 		{
 			Timestamp: output.FLBTime{Time: time.Unix(1700000000, 0)},
 			Record: map[any]any{
@@ -68,7 +68,7 @@ func TestProcessRecords_OTelFields(t *testing.T) {
 		},
 	}
 
-	logs := processRecords(records)
+	logs := ProcessRecords(records)
 	lr := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
 
 	if lr.Body().Str() != "request completed" {
@@ -95,7 +95,7 @@ func TestProcessRecords_OTelFields(t *testing.T) {
 }
 
 func TestProcessRecords_OTelEnvelopeGroup(t *testing.T) {
-	records := []decodedRecord{
+	records := []DecodedRecord{
 		{
 			Timestamp: output.FLBTime{Time: time.Unix(groupStartTS, 0)},
 			Record: map[any]any{
@@ -131,7 +131,7 @@ func TestProcessRecords_OTelEnvelopeGroup(t *testing.T) {
 		},
 	}
 
-	logs := processRecords(records)
+	logs := ProcessRecords(records)
 
 	if logs.ResourceLogs().Len() != 1 {
 		t.Fatalf("expected 1 ResourceLogs, got %d", logs.ResourceLogs().Len())
@@ -182,7 +182,7 @@ func TestProcessRecords_OTelEnvelopeGroup(t *testing.T) {
 }
 
 func TestProcessRecords_MixedBatch(t *testing.T) {
-	records := []decodedRecord{
+	records := []DecodedRecord{
 		{
 			Timestamp: output.FLBTime{Time: time.Unix(1700000000, 0)},
 			Record:    map[any]any{"message": "flat record"},
@@ -210,7 +210,7 @@ func TestProcessRecords_MixedBatch(t *testing.T) {
 		},
 	}
 
-	logs := processRecords(records)
+	logs := ProcessRecords(records)
 
 	if logs.ResourceLogs().Len() != 3 {
 		t.Fatalf("expected 3 ResourceLogs (flat + grouped + flat), got %d", logs.ResourceLogs().Len())
@@ -245,7 +245,7 @@ func TestProcessRecords_MixedBatch(t *testing.T) {
 }
 
 func TestProcessRecords_EmptyBatch(t *testing.T) {
-	logs := processRecords(nil)
+	logs := ProcessRecords(nil)
 	if logs.ResourceLogs().Len() != 0 {
 		t.Errorf("expected 0 ResourceLogs for nil input, got %d", logs.ResourceLogs().Len())
 	}

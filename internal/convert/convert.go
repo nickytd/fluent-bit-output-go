@@ -1,4 +1,9 @@
-package main
+// Package convert turns decoded Fluent Bit records (one FlushCtx worth) into
+// a single plog.Logs. It handles both flat records and the OTel envelope
+// grouping mechanism that fluent-bit's opentelemetry_envelope processor
+// injects around records that carry resource + instrumentation-scope
+// metadata.
+package convert
 
 import (
 	"fmt"
@@ -11,16 +16,26 @@ import (
 )
 
 const (
+	// groupStartTS and groupEndTS are sentinel *canonicalised* timestamps
+	// used internally by extractUnixSec. Fluent Bit's opentelemetry_envelope
+	// processor emits real timestamps 0xFFFFFFFF (group start) and
+	// 0xFFFFFFFE (group end); extractUnixSec maps those to these sentinels.
 	groupStartTS int64 = -1
 	groupEndTS   int64 = -2
 )
 
-type decodedRecord struct {
+// DecodedRecord is one msgpack record already pulled off Fluent Bit's decoder,
+// paired with its timestamp. Callers build a slice of these from a single
+// FlushCtx invocation and hand it to ProcessRecords.
+type DecodedRecord struct {
 	Timestamp any
 	Record    map[any]any
 }
 
-func processRecords(records []decodedRecord) plog.Logs {
+// ProcessRecords collapses one FlushCtx worth of records into a single
+// plog.Logs. Envelope-group records inherit their resource and scope from
+// the group-start marker; flat records get their own ResourceLogs.
+func ProcessRecords(records []DecodedRecord) plog.Logs {
 	logs := plog.NewLogs()
 
 	var currentRL plog.ResourceLogs

@@ -1,4 +1,4 @@
-package main
+package queue
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/collector/pdata/plog"
+
+	"github.com/nickytd/fluent-bit-output-go/internal/exporter"
 )
 
 // Bounds for the export-failure backoff. On repeated Export errors the drain
@@ -17,7 +19,7 @@ const (
 	exportBackoffMax     = 30 * time.Second
 )
 
-func runConsumer(ctx context.Context, logger *slog.Logger, exp exporter, done chan struct{}) {
+func runConsumer(ctx context.Context, logger *slog.Logger, exp exporter.Exporter, done chan struct{}) {
 	defer close(done)
 	defer func() { _ = exp.Shutdown(ctx) }()
 

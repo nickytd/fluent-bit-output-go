@@ -1,4 +1,14 @@
-package main
+// Package queue is the on-disk persistent queue that buffers marshalled
+// plog.Logs between Fluent Bit's FLBPluginFlushCtx and the OTLP consumer
+// goroutine. It uses a single-file bbolt B+ tree with monotonic 8-byte
+// big-endian keys, giving lexicographic FIFO ordering. On startup the
+// in-memory sequence counter is reseeded from the bucket's last key so a
+// restart with un-drained items never overwrites them.
+//
+// The package intentionally keeps its state at package scope; the plugin's
+// cgo entry points are a single-instance surface, and the sync.Once around
+// Init makes the queue a process-wide singleton by design.
+package queue
 
 import (
 	"context"
@@ -11,6 +21,8 @@ import (
 	"sync/atomic"
 
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/nickytd/fluent-bit-output-go/internal/exporter"
 )
 
 var (
@@ -24,7 +36,10 @@ var (
 	queueDone  chan struct{}
 )
 
-func initQueue(logger *slog.Logger, dir string, exp exporter) error {
+// Init opens the bbolt file under dir, spawns the consumer goroutine, and
+// wires the given Exporter as the drain target. It is safe to call multiple
+// times; only the first call takes effect (sync.Once).
+func Init(logger *slog.Logger, dir string, exp exporter.Exporter) error {
 	var initErr error
 	queueOnce.Do(func() {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -68,7 +83,9 @@ func initQueue(logger *slog.Logger, dir string, exp exporter) error {
 	return initErr
 }
 
-func enqueue(data []byte) error {
+// Enqueue writes one marshalled plog.Logs batch to the bbolt bucket under
+// the next monotonically-increasing key and signals the consumer.
+func Enqueue(data []byte) error {
 	seq := writeSeq.Add(1)
 	var key [8]byte
 	binary.BigEndian.PutUint64(key[:], seq)
@@ -81,7 +98,9 @@ func enqueue(data []byte) error {
 	return nil
 }
 
-func shutdownQueue() {
+// Shutdown cancels the consumer, waits for it to exit, and closes the
+// underlying bbolt DB. Safe to call from a non-init goroutine.
+func Shutdown() {
 	if cancelFn != nil {
 		cancelFn()
 	}

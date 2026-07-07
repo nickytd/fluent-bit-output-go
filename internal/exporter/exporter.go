@@ -1,4 +1,8 @@
-package main
+// Package exporter carries the OTLP exporter implementations used by the
+// plugin's consumer goroutine. Three concrete backends are provided:
+// stdout (OTLP JSON, for debugging), OTLP/HTTP (protobuf POST), and
+// OTLP/gRPC (via plogotlp.GRPCClient).
+package exporter
 
 import (
 	"bytes"
@@ -13,7 +17,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-type exporter interface {
+// Exporter is the sink for marshalled log batches drained from the queue.
+// Implementations must be safe for concurrent Shutdown but Export is only
+// called from a single consumer goroutine.
+type Exporter interface {
 	Export(ctx context.Context, logs plog.Logs) error
 	Shutdown(ctx context.Context) error
 }
@@ -22,7 +29,9 @@ type stdoutExporter struct {
 	m plog.JSONMarshaler
 }
 
-func newStdoutExporter() *stdoutExporter {
+// NewStdout returns an Exporter that prints OTLP JSON to stdout. Useful for
+// local debugging when no collector is available.
+func NewStdout() Exporter {
 	return &stdoutExporter{}
 }
 
@@ -44,7 +53,8 @@ type httpExporter struct {
 	client   *http.Client
 }
 
-func newHTTPExporter(endpoint string) *httpExporter {
+// NewHTTP returns an Exporter that POSTs OTLP/HTTP protobuf to endpoint+"/v1/logs".
+func NewHTTP(endpoint string) Exporter {
 	return &httpExporter{
 		endpoint: endpoint + "/v1/logs",
 		client:   &http.Client{},
@@ -86,7 +96,9 @@ type grpcExporter struct {
 	conn   *grpc.ClientConn
 }
 
-func newGRPCExporter(endpoint string) (*grpcExporter, error) {
+// NewGRPC returns an Exporter that sends via plogotlp.GRPCClient over an
+// insecure gRPC channel. TLS/credentials configuration is not yet exposed.
+func NewGRPC(endpoint string) (Exporter, error) {
 	conn, err := grpc.NewClient(endpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
