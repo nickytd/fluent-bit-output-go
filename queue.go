@@ -44,6 +44,19 @@ func initQueue(logger *slog.Logger, dir string, exp exporter) error {
 			initErr = fmt.Errorf("create bucket: %w", err)
 			return
 		}
+		// Reseed writeSeq from the last key already on disk so a restart with
+		// un-drained items does not overwrite them by starting again from seq=1.
+		if err := d.View(func(tx *bolt.Tx) error {
+			k, _ := tx.Bucket(bucketName).Cursor().Last()
+			if len(k) == 8 {
+				writeSeq.Store(binary.BigEndian.Uint64(k))
+			}
+			return nil
+		}); err != nil {
+			_ = d.Close()
+			initErr = fmt.Errorf("seed writeSeq: %w", err)
+			return
+		}
 		db = d
 		cond = sync.NewCond(&mu)
 		queueDone = make(chan struct{})

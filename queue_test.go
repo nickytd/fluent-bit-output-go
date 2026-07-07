@@ -219,3 +219,77 @@ func TestQueueIntegration(t *testing.T) {
 		t.Fatalf("expected 5 items, got %d", count)
 	}
 }
+
+// seedWriteSeqFromDB mirrors the reseed step inside initQueue's sync.Once so
+// the restart path can be tested without touching package-level state.
+func seedWriteSeqFromDB(t *testing.T, d *bolt.DB) uint64 {
+	t.Helper()
+	var seq uint64
+	if err := d.View(func(tx *bolt.Tx) error {
+		k, _ := tx.Bucket([]byte("logs")).Cursor().Last()
+		if len(k) == 8 {
+			seq = binary.BigEndian.Uint64(k)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	return seq
+}
+
+func TestWriteSeqReseedAfterRestart(t *testing.T) {
+	d := openTestDB(t)
+
+	// Simulate a pre-restart run that wrote keys 1..5 and crashed before drain.
+	if err := d.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("logs"))
+		for i := range uint64(5) {
+			var key [8]byte
+			binary.BigEndian.PutUint64(key[:], i+1)
+			if err := b.Put(key[:], []byte{byte(i + 1)}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("pre-restart put: %v", err)
+	}
+
+	// A naive restart with writeSeq=0 would reuse key=1 on the next enqueue
+	// and overwrite the surviving payload. Reseeding from Cursor().Last()
+	// must return 5 so the next Add(1) produces 6.
+	got := seedWriteSeqFromDB(t, d)
+	if got != 5 {
+		t.Fatalf("reseed: got %d, want 5", got)
+	}
+
+	// Write the next key using the reseeded value and confirm the pre-restart
+	// payload at key=1 is untouched.
+	nextKey := got + 1
+	var kb [8]byte
+	binary.BigEndian.PutUint64(kb[:], nextKey)
+	if err := d.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte("logs")).Put(kb[:], []byte("post-restart"))
+	}); err != nil {
+		t.Fatalf("post-restart put: %v", err)
+	}
+
+	var origKey [8]byte
+	binary.BigEndian.PutUint64(origKey[:], 1)
+	if err := d.View(func(tx *bolt.Tx) error {
+		v := tx.Bucket([]byte("logs")).Get(origKey[:])
+		if len(v) != 1 || v[0] != 1 {
+			t.Fatalf("pre-restart payload at key=1 was overwritten: got % x", v)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("view: %v", err)
+	}
+}
+
+func TestWriteSeqReseedOnEmptyBucket(t *testing.T) {
+	d := openTestDB(t)
+	if got := seedWriteSeqFromDB(t, d); got != 0 {
+		t.Fatalf("empty bucket: got %d, want 0", got)
+	}
+}
