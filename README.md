@@ -106,13 +106,82 @@ Records between markers inherit the group's resource/scope. Records outside any 
 
 MIT
 
+## Container image and Kubernetes deployment
+
+The plugin is published as a container image on GHCR at
+`ghcr.io/nickytd/fluent-bit-output-go` (linux/amd64 + linux/arm64).
+
+The image is intentionally minimal — it only carries `/plugin/go-out.so` (the
+compiled shared library) and a small static `copy-plugin` entrypoint. It is
+designed to run as a Kubernetes **initContainer** that copies `go-out.so` onto
+a shared `emptyDir` volume, from which the main `fluent-bit` container then
+loads it via `-e`.
+
+### Minimal Pod example
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fluent-bit
+spec:
+  initContainers:
+    - name: install-plugin
+      image: ghcr.io/nickytd/fluent-bit-output-go:latest
+      volumeMounts:
+        - name: plugin
+          mountPath: /output
+  containers:
+    - name: fluent-bit
+      image: fluent/fluent-bit:latest
+      args:
+        - -c
+        - /fluent-bit/etc/fluent-bit.yaml
+        - -e
+        - /fluent-bit/plugins/go-out.so
+      volumeMounts:
+        - name: plugin
+          mountPath: /fluent-bit/plugins
+          readOnly: true
+        # …plus your fluent-bit config and log volumes.
+  volumes:
+    - name: plugin
+      emptyDir: {}
+```
+
+The initContainer's default command is:
+
+```
+/copy-plugin -src=/plugin/go-out.so -dst=/output
+```
+
+Override `-dst` if your shared volume is mounted at a different path.
+
+A full `DaemonSet` example — including a `ConfigMap` with a fluent-bit YAML
+that wires up `go-out` with an OTLP/gRPC exporter and a `hostPath` for the
+persistent bbolt queue — lives at [`deploy/kubernetes-daemonset.yaml`](deploy/kubernetes-daemonset.yaml).
+
+### Building the image locally
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t fluent-bit-output-go:local .
+```
+
+The Dockerfile is a three-stage multi-arch build: one stage cross-compiles the
+cgo `.so` against glibc (matching Fluent Bit's official runtime image), one
+stage builds the static `copy-plugin` binary, and the final stage assembles
+both into a `scratch` image.
+
 ## Persistent Queue Experiments
 
-This project explores persistent buffering between Fluent Bit's flush pipeline and the OTel SDK output. Instead of writing OTLP JSON directly to stdout, log batches are serialized into an on-disk queue and consumed asynchronously by a goroutine that pushes records through the OTel SDK LoggerProvider.
+This project explored persistent buffering between Fluent Bit's flush pipeline
+and the OTel SDK output. The final design uses **bbolt** (etcd's fork of
+BoltDB) for its ACID transactions, single-file layout, and light dependency
+footprint. Earlier prototypes on [dque](https://github.com/joncrlsn/dque) and
+[Pebble](https://github.com/cockroachdb/pebble) informed the trade-off table
+below; those branches have been retired now that bbolt is on `main`.
 
-### Comparison
-
-| Aspect | [dque](https://github.com/joncrlsn/dque) | [Pebble](https://github.com/cockroachdb/pebble) | OTel Collector (bbolt) |
+| Aspect | [dque](https://github.com/joncrlsn/dque) | [Pebble](https://github.com/cockroachdb/pebble) | bbolt (current) |
 |--------|------|--------|------------------------|
 | **Backend** | Segmented flat files + gob | LSM-tree (SSTables + WAL) | B+ tree (single file) |
 | **Serialization** | `encoding/gob` (public fields only) | Raw `[]byte` (no opinion) | Protobuf |
@@ -123,12 +192,3 @@ This project explores persistent buffering between Fluent Bit's flush pipeline a
 | **Crash safety** | WAL per segment | WAL (configurable sync) | ACID transactions |
 | **Maintenance** | Abandoned (last commit 2024) | Active (CockroachDB production) | Active (etcd project) |
 | **Dependency weight** | Light (~3 deps) | Moderate (~15 deps) | Light (~5 deps) |
-| **Best for** | Simple prototyping | High-throughput log buffering | OTel Collector integration |
-
-### Branch Implementations
-
-| Branch | Queue Backend | Description |
-|--------|--------------|-------------|
-| [`feat/dque-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/dque-otlp-queue) | dque | Gob-serialized `QueueItem{Data []byte}` with native blocking dequeue |
-| [`feat/pebble-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/pebble-otlp-queue) | Pebble | Monotonic uint64 keys, raw byte values, `sync.Cond` signaling |
-| [`feat/bbolt-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/bbolt-otlp-queue) | bbolt | Single-file B+ tree (etcd's fork of BoltDB), monotonic uint64 keys, `sync.Cond` signaling |
