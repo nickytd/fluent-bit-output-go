@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -52,6 +52,7 @@ jobs:
             org.opencontainers.image.description=OTLP output plugin for Fluent Bit (initContainer image)
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -67,3 +68,31 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          # GitHub auto-generates categorized notes from commits and merged
+          # PRs between this tag and the previous one. Conventional Commit
+          # subjects (feat/fix/docs/chore/ci/refactor/test) end up as the
+          # section headings.
+          generate_release_notes: true
+          body: |
+            ## Container image
+
+            Multi-arch image published to GHCR:
+
+            ```
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+
+            Digest: `${{ steps.build.outputs.digest }}`
+
+            Supported platforms: `linux/amd64`, `linux/arm64`.
+
+            See the [README](https://github.com/${{ github.repository }}#container-image-and-kubernetes-deployment)
+            for the initContainer usage pattern.
+          append_body: true
+          fail_on_unmatched_files: false
