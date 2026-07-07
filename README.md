@@ -1,17 +1,20 @@
 # fluent-bit-output-go
 
-A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as a C shared library. It converts log records from Fluent Bit's pipeline into [OpenTelemetry](https://opentelemetry.io/) `plog.Logs` structures and emits OTLP JSON to stdout.
+A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as a C shared library. It converts log records from Fluent Bit's pipeline into [OpenTelemetry](https://opentelemetry.io/) `plog.Logs` structures, buffers them in a persistent [bbolt](https://github.com/etcd-io/bbolt) queue, and exports via configurable OTLP targets.
 
 ## Features
 
 - Handles **standard flat records** — each becomes its own ResourceLogs with fields mapped as LogRecord attributes.
 - Handles **OpenTelemetry envelope log groups** — Fluent Bit's internal grouping mechanism that preserves resource and scope metadata.
-- Maps well-known OTLP fields: `body`, `severity_number`, `severity_text`, `trace_id`, `span_id`.
+- Maps well-known fields: `body`/`log`/`message` → LogRecord body, `level` → severity, `severity_number`, `severity_text`, `trace_id`, `span_id`.
+- **Persistent queue** via bbolt B+ tree — monotonic sequence keys provide FIFO ordering with ACID transactions for crash recovery.
+- **Configurable export**: stdout (OTLP JSON), OTLP/HTTP, or OTLP/gRPC.
 
 ## Requirements
 
 - Go 1.26+
 - Fluent Bit (for running the plugin and e2e tests)
+- [OTel Collector](https://opentelemetry.io/docs/collector/) (`otelcol` binary, for e2e tests)
 - [golangci-lint](https://golangci-lint.run/) (for linting)
 
 ## Build
@@ -35,19 +38,63 @@ pipeline:
   outputs:
     - name: go-out
       match: "*"
+      # queue_dir: /tmp/fluent-bit-bbolt
+      # otlp_grpc: localhost:4317
+      # otlp_http: http://localhost:4318
+```
+
+### Configuration Keys
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `id` | auto-increment | Instance identifier for logging |
+| `queue_dir` | `/tmp/fluent-bit-bbolt` | Directory for the `queue.db` bbolt file |
+| `otlp_grpc` | *(none)* | OTLP gRPC endpoint (e.g. `localhost:4317`) |
+| `otlp_http` | *(none)* | OTLP HTTP endpoint (e.g. `http://localhost:4318`) |
+
+If neither `otlp_grpc` nor `otlp_http` is set, logs are emitted as OTLP JSON to stdout. Only one of `otlp_grpc`/`otlp_http` can be set.
+
+## Testing with OTel Collector
+
+An example collector config is provided in `otel-collector.yaml`:
+
+```bash
+# Start the collector (receives on gRPC:4317 and HTTP:4318, prints via debug exporter)
+otelcol --config otel-collector.yaml
+
+# In another terminal, run with gRPC export:
+# Uncomment otlp_grpc in fluent-bit.yaml, then:
+make run
 ```
 
 ## Testing
 
 ```bash
 make unit-test    # unit tests
-make e2e-test     # builds .so, runs fluent-bit, validates OTLP output
+make e2e-test     # builds .so, starts OTel Collector, runs fluent-bit, validates output
 make test         # both
 ```
 
+E2E tests require `fluent-bit` and `otelcol` in PATH. They start an OTel Collector with the debug exporter, run Fluent Bit with the plugin exporting via OTLP/HTTP, and verify that log records (including resource attributes and severity) appear in the collector output.
+
+## Architecture
+
+```
+Fluent Bit → FLBPluginFlushCtx → processRecords() → plog.Logs
+    → ProtoMarshaler → bbolt DB (uint64 key, single bucket)
+    → consumer goroutine (sync.Cond) → ProtoUnmarshaler → exporter
+                                                            ├── stdout (OTLP JSON)
+                                                            ├── OTLP/HTTP (plogotlp)
+                                                            └── OTLP/gRPC (plogotlp)
+```
+
+- **Queue**: bbolt single-file B+ tree (`queue.db`) with a `logs` bucket. Big-endian uint64 keys give lexicographic FIFO ordering. Each `Update` is an ACID transaction.
+- **Consumer**: `sync.Cond` wait/signal loop — producer signals after `Put`, consumer iterates the bucket and deletes processed entries.
+- **Serialization**: `plog.ProtoMarshaler`/`ProtoUnmarshaler` for compact binary queue storage.
+
 ## How It Works
 
-OTLP JSON is written to **stdout**. Plugin operational logs go to **stderr** using a custom `slog.Handler` that matches Fluent Bit's log format.
+Plugin operational logs go to **stderr** using a custom `slog.Handler` that matches Fluent Bit's log format.
 
 The plugin detects OTel envelope groups via special marker timestamps:
 - `0xFFFFFFFF` → group start (carries resource and scope metadata)
@@ -85,4 +132,3 @@ This project explores persistent buffering between Fluent Bit's flush pipeline a
 | [`feat/dque-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/dque-otlp-queue) | dque | Gob-serialized `QueueItem{Data []byte}` with native blocking dequeue |
 | [`feat/pebble-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/pebble-otlp-queue) | Pebble | Monotonic uint64 keys, raw byte values, `sync.Cond` signaling |
 | [`feat/bbolt-otlp-queue`](https://github.com/nickytd/fluent-bit-output-go/tree/feat/bbolt-otlp-queue) | bbolt | Single-file B+ tree (etcd's fork of BoltDB), monotonic uint64 keys, `sync.Cond` signaling |
-

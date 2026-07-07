@@ -8,23 +8,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.opentelemetry.io/collector/pdata/plog"
 )
 
 var _ = Describe("Fluent Bit output plugin", func() {
 	var (
-		soPath    string
-		pluginDir string
-		logs      plog.Logs
+		soPath         string
+		pluginDir      string
+		collectorOut   string
 	)
 
 	BeforeEach(func() {
 		if _, err := exec.LookPath("fluent-bit"); err != nil {
 			Skip("fluent-bit not found in PATH")
+		}
+		if _, err := exec.LookPath("otelcol"); err != nil {
+			Skip("otelcol not found in PATH")
 		}
 
 		pluginDir = os.Getenv("PLUGIN_DIR")
@@ -36,78 +39,67 @@ var _ = Describe("Fluent Bit output plugin", func() {
 		configPath := filepath.Join(pluginDir, "..", "fluent-bit.yaml")
 		Expect(configPath).To(BeAnExistingFile(), "fluent-bit.yaml config not found at %s", configPath)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+		collectorConfigPath := filepath.Join(pluginDir, "..", "otel-collector.yaml")
+		Expect(collectorConfigPath).To(BeAnExistingFile(), "otel-collector.yaml not found at %s", collectorConfigPath)
 
-		cmd := exec.CommandContext(ctx, "fluent-bit", "-e", soPath, "-c", configPath)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
+		// Start OTel Collector
+		collectorCtx, collectorCancel := context.WithCancel(context.Background())
+		defer collectorCancel()
 
-		err := cmd.Run()
-		if ctx.Err() == nil {
-			Expect(err).NotTo(HaveOccurred(), "stderr: %s\nstdout: %s", stderr.String(), stdout.String())
+		collectorCmd := exec.CommandContext(collectorCtx, "otelcol", "--config", collectorConfigPath)
+		var collectorStderr bytes.Buffer
+		collectorCmd.Stderr = &collectorStderr
+
+		err := collectorCmd.Start()
+		Expect(err).NotTo(HaveOccurred(), "failed to start otelcol")
+
+		// Wait for collector to be ready
+		time.Sleep(2 * time.Second)
+
+		// Run Fluent Bit with the plugin
+		fbCtx, fbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer fbCancel()
+
+		fbCmd := exec.CommandContext(fbCtx, "fluent-bit", "-e", soPath, "-c", configPath)
+		var fbStderr bytes.Buffer
+		fbCmd.Stderr = &fbStderr
+
+		err = fbCmd.Run()
+		if fbCtx.Err() == nil {
+			Expect(err).NotTo(HaveOccurred(), "fluent-bit stderr: %s", fbStderr.String())
 		}
 
-		Expect(stdout.String()).NotTo(BeEmpty(), "no output; stderr: %s", stderr.String())
+		// Give collector time to process and flush debug output
+		time.Sleep(1 * time.Second)
 
-		logs = plog.NewLogs()
-		unmarshaler := &plog.JSONUnmarshaler{}
-		for _, line := range bytes.Split(stdout.Bytes(), []byte("\n")) {
-			if len(bytes.TrimSpace(line)) == 0 {
-				continue
-			}
-			parsed, err := unmarshaler.UnmarshalLogs(line)
-			Expect(err).NotTo(HaveOccurred(), "raw line: %s", string(line))
-			parsed.ResourceLogs().MoveAndAppendTo(logs.ResourceLogs())
-		}
-		Expect(logs.ResourceLogs().Len()).To(BeNumerically(">=", 2))
+		// Stop collector
+		collectorCancel()
+		_ = collectorCmd.Wait()
+
+		collectorOut = collectorStderr.String()
+		Expect(collectorOut).NotTo(BeEmpty(), "collector produced no output")
 	})
 
-	It("processes OTel envelope records with resource attributes", func() {
-		var otelRL plog.ResourceLogs
-		found := false
-		for i := range logs.ResourceLogs().Len() {
-			rl := logs.ResourceLogs().At(i)
-			if v, ok := rl.Resource().Attributes().Get("component.name"); ok {
-				Expect(v.Str()).To(Equal("test.e2e"))
-				otelRL = rl
-				found = true
+	It("delivers OTel envelope records with resource attributes to the collector", func() {
+		Expect(collectorOut).To(ContainSubstring("component.name"))
+		Expect(collectorOut).To(ContainSubstring("test.e2e"))
+		Expect(collectorOut).To(ContainSubstring("e2e test log"))
+	})
+
+	It("delivers flat records with severity to the collector", func() {
+		Expect(collectorOut).To(ContainSubstring("another log"))
+		Expect(collectorOut).To(ContainSubstring("SeverityText: info"))
+	})
+
+	It("sets severity from the level field", func() {
+		lines := strings.Split(collectorOut, "\n")
+		foundSeverity := false
+		for _, line := range lines {
+			if strings.Contains(line, "SeverityNumber") && strings.Contains(line, "Info") {
+				foundSeverity = true
 				break
 			}
 		}
-		Expect(found).To(BeTrue(), "no ResourceLogs with 'component.name' resource attribute")
-
-		Expect(otelRL.ScopeLogs().Len()).To(BeNumerically(">=", 1))
-		sl := otelRL.ScopeLogs().At(0)
-		Expect(sl.LogRecords().Len()).To(BeNumerically(">=", 1))
-
-		lr := sl.LogRecords().At(0)
-		msg, ok := lr.Attributes().Get("message")
-		Expect(ok).To(BeTrue(), "expected 'message' attribute on OTel log record")
-		Expect(msg.Str()).To(Equal("e2e test log"))
-	})
-
-	It("processes simple flat records", func() {
-		var simpleRL plog.ResourceLogs
-		found := false
-		for i := range logs.ResourceLogs().Len() {
-			rl := logs.ResourceLogs().At(i)
-			if rl.Resource().Attributes().Len() == 0 {
-				simpleRL = rl
-				found = true
-				break
-			}
-		}
-		Expect(found).To(BeTrue(), "no ResourceLogs without resource attributes (simple record)")
-
-		Expect(simpleRL.ScopeLogs().Len()).To(BeNumerically(">=", 1))
-		sl := simpleRL.ScopeLogs().At(0)
-		Expect(sl.LogRecords().Len()).To(BeNumerically(">=", 1))
-
-		lr := sl.LogRecords().At(0)
-		msg, ok := lr.Attributes().Get("message")
-		Expect(ok).To(BeTrue(), "expected 'message' attribute on simple log record")
-		Expect(msg.Str()).To(Equal("another log"))
+		Expect(foundSeverity).To(BeTrue(), "expected SeverityNumber Info in collector output:\n%s", collectorOut)
 	})
 })

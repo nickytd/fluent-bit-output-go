@@ -2,3 +2,6 @@ bin/
 
 *.so
 *.h
+
+# pebble queue data
+queue-data/
