@@ -2,6 +2,16 @@ bin/
 
 *.so
 *.h
+*.dylib
 
-# pebble queue data
+# Stray host-side binary from `go build .` without -o
+/fluent-bit-output-go
+
+# Legacy pebble queue data dir
 queue-data/
+# Default bbolt queue dir when running locally
+/tmp-queue/
+
+# Editor / OS
+.DS_Store
+.vscode/
