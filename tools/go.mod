@@ -1,6 +1,6 @@
 module github.com/nickytd/fluent-bit-output-go/tools
 
-go 1.26.3
+go 1.27.0
 
 tool (
 	github.com/daixiang0/gci

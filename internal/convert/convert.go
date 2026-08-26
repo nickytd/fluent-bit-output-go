@@ -84,7 +84,7 @@ func extractUnixSec(ts any) int64 {
 
 	switch t := ts.(type) {
 	case output.FLBTime:
-		sec = uint64(t.Unix()) //nolint:gosec // G115: Unix() returns non-negative seconds since epoch, safe to widen to uint64
+		sec = uint64(t.Unix()) // #nosec G115 -- Unix() returns non-negative seconds since epoch, safe to widen to uint64
 	case uint64:
 		sec = t
 	default:
@@ -97,7 +97,7 @@ func extractUnixSec(ts any) int64 {
 	case 0xFFFFFFFE:
 		return groupEndTS
 	default:
-		return int64(sec) //nolint:gosec // G115: sec is a regular Unix timestamp, well within int64 range
+		return int64(sec) // #nosec G115 -- sec is a regular Unix timestamp, well within int64 range
 	}
 }
 
@@ -106,7 +106,7 @@ func populateLogRecord(lr plog.LogRecord, ts any, record map[any]any) {
 	case output.FLBTime:
 		lr.SetTimestamp(pcommon.NewTimestampFromTime(t.Time))
 	case uint64:
-		lr.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(int64(t), 0))) //nolint:gosec // G115: t is a Fluent Bit uint64 timestamp (Unix seconds), safe within int64 range
+		lr.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(int64(t), 0))) // #nosec G115 -- t is a Fluent Bit uint64 timestamp (Unix seconds), safe within int64 range
 	}
 
 	for k, v := range record {
@@ -209,7 +209,7 @@ func setAttributeValue(m pcommon.Map, key string, v any) {
 	case int:
 		m.PutInt(key, int64(val))
 	case uint64:
-		m.PutInt(key, int64(val)) //nolint:gosec // G115: msgpack uint64 attribute value; OTel int attributes are int64, truncation is acceptable
+		m.PutInt(key, int64(val)) // #nosec G115 -- msgpack uint64 attribute value; OTel int attributes are int64, truncation is acceptable
 	case float64:
 		m.PutDouble(key, val)
 	case bool:
@@ -236,11 +236,11 @@ func setBodyValue(dest pcommon.Value, v any) {
 func toInt(v any) (int32, bool) {
 	switch n := v.(type) {
 	case int64:
-		return int32(n), true //nolint:gosec // G115: severity numbers are small OTel enum values, truncation is safe
+		return int32(n), true // #nosec G115 -- severity numbers are small OTel enum values, truncation is safe
 	case int:
-		return int32(n), true //nolint:gosec // G115: severity numbers are small OTel enum values, truncation is safe
+		return int32(n), true // #nosec G115 -- severity numbers are small OTel enum values, truncation is safe
 	case uint64:
-		return int32(n), true //nolint:gosec // G115: severity numbers are small OTel enum values, truncation is safe
+		return int32(n), true // #nosec G115 -- severity numbers are small OTel enum values, truncation is safe
 	default:
 		return 0, false
 	}
