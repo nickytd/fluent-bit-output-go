@@ -51,6 +51,10 @@ Build / development:
 - [OTel Collector](https://opentelemetry.io/docs/collector/) (`otelcol`
   binary, only for the e2e tests)
 
+Dev tooling (linters, test runner, security scanners) is managed via
+`tools/go.mod` and invoked through `go tool -modfile=tools/go.mod` — no
+separate installs required.
+
 ## Build
 
 ```bash
@@ -113,9 +117,9 @@ make e2e-test     # builds .so, starts otelcol, runs fluent-bit, asserts output
 make test         # both
 ```
 
-CI runs unit tests with the race detector (`go test -race`); the local
-`make unit-test` target doesn't — pass `-race` explicitly if you want it
-locally: `go test -race ./...`.
+CI runs unit tests with the race detector via `make unit-test TEST_ARGS="-race -count=1"`.
+To match CI locally, run the same command. Bare `go test -race ./...` also works but
+bypasses `gotestsum` and the tools module.
 
 E2E tests require `fluent-bit` and `otelcol` on PATH. They start an OTel
 Collector with the debug exporter, run Fluent Bit with the plugin exporting
