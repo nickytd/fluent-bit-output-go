@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 nickytd
+# SPDX-License-Identifier: Apache-2.0
 name: CI
 
 on:
@@ -15,47 +17,61 @@ permissions:
   contents: read
 
 jobs:
-  lint:
-    name: Lint
+  check:
+    name: Check (fmt / gci / go-fix / lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: gofmt
-        run: |
-          out=$(gofmt -s -l .)
-          if [ -n "$out" ]; then
-            echo "gofmt found unformatted files:"
-            echo "$out"
-            exit 1
-          fi
-
-      - name: go vet
-        run: go vet ./...
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: v2.12.2
+      - name: check
+        run: make check
 
   test:
     name: Unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Test with race detector
-        run: go test -race -count=1 ./...
+      - name: Unit tests with race detector
+        run: make unit-test TEST_ARGS="-race -count=1"
+
+  sast:
+    name: SAST (gosec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gosec
+        run: make sast
+
+  govulncheck:
+    name: Vulnerability check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: govulncheck
+        run: make govulncheck
 
   build:
     name: Build plugin (${{ matrix.arch }})
@@ -69,9 +85,9 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -80,7 +96,7 @@ jobs:
         run: make build
 
       - name: Upload plugin artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: go-out-${{ matrix.arch }}.so
           path: bin/go-out.so

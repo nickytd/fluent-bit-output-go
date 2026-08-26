@@ -1,3 +1,6 @@
+// Copyright 2026 nickytd
+// SPDX-License-Identifier: Apache-2.0
+
 // Package main is the cgo entry point loaded by Fluent Bit via `-e`. The
 // //export directives below produce the C-visible symbols Fluent Bit looks
 // for in the compiled shared library. All implementation lives under

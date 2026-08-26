@@ -16,7 +16,7 @@
 # container. Fluent Bit's official images (fluent/fluent-bit) are glibc-based
 # (debian), so we build against a glibc toolchain here.
 
-ARG GO_VERSION=1.26.3
+ARG GO_VERSION=1.27.0
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS plugin-builder
 
 # Cross-compile the plugin for the target platform. CGO cross builds need the
@@ -74,7 +74,7 @@ ARG REVISION=unknown
 LABEL org.opencontainers.image.title="fluent-bit-output-go" \
       org.opencontainers.image.description="OTLP output plugin for Fluent Bit, delivered as an initContainer that copies go-out.so onto a shared volume." \
       org.opencontainers.image.source="https://github.com/nickytd/fluent-bit-output-go" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
 

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "commitMessagePrefix": "chore(deps):",
+  "schedule": ["on the first day of the month"],
+  "packageRules": [
+    {
+      "description": "Direct Go module dependencies",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["require"],
+      "matchIndirectDependencies": false,
+      "enabled": true
+    },
+    {
+      "description": "Direct tools/ module dependencies",
+      "matchManagers": ["gomod"],
+      "matchFileNames": ["tools/go.mod"],
+      "matchIndirectDependencies": false,
+      "enabled": true
+    },
+    {
+      "description": "Disable indirect Go dependencies",
+      "matchManagers": ["gomod"],
+      "matchIndirectDependencies": true,
+      "matchFileNames": ["go.mod"],
+      "enabled": false
+    },
+    {
+      "description": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "enabled": true
+    }
+  ]
+}

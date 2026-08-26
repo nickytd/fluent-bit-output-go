@@ -1,3 +1,6 @@
+// Copyright 2026 nickytd
+// SPDX-License-Identifier: Apache-2.0
+
 // Package queue is the on-disk persistent queue that buffers marshalled
 // plog.Logs between Fluent Bit's FLBPluginFlushCtx and the OTLP consumer
 // goroutine. It uses a single-file bbolt B+ tree with monotonic 8-byte

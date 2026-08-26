@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 nickytd
+# SPDX-License-Identifier: Apache-2.0
+version: "2"
+
+linters:
+  enable:
+    - gosec
+    - govet
+    - staticcheck
+    - unused
+
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - default
+      - prefix(github.com/nickytd/fluent-bit-output-go)
+
+issues:
+  exclude-files:
+    - plugin.go

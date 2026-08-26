@@ -1,3 +1,6 @@
+// Copyright 2026 nickytd
+// SPDX-License-Identifier: Apache-2.0
+
 // Package flblog provides an slog.Handler that formats records in the same
 // [ts] [level] [tag] message style that Fluent Bit prints its own logs in,
 // so plugin-side logs blend into the fluent-bit console output.
