@@ -1,17 +1,20 @@
 changelog:
+  exclude:
+    labels:
+      - skip-changelog
   categories:
     - title: "Features"
       labels:
         - feat
-      exclude:
-        labels:
-          - ignore
+        - enhancement
     - title: "Bug Fixes"
       labels:
         - fix
+        - bug
     - title: "Documentation"
       labels:
         - docs
+        - documentation
     - title: "Build & Tooling"
       labels:
         - chore
@@ -23,3 +26,6 @@ changelog:
     - title: "Tests"
       labels:
         - test
+    - title: "Other Changes"
+      labels:
+        - "*"
