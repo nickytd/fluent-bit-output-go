@@ -36,9 +36,40 @@ type pluginInstance struct {
 	logger *slog.Logger
 }
 
+var pluginConfigMap = []output.ConfigMap{
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "id",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Instance identifier used as a prefix in log lines. Defaults to an auto-incremented integer.",
+	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "queue_dir",
+		DefValue: "/tmp/fluent-bit-bbolt",
+		Flags:    0,
+		Desc:     "Directory holding the bbolt queue.db file for persistent buffering.",
+	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "otlp_grpc",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "OTLP gRPC endpoint (e.g. localhost:4317). Mutually exclusive with otlp_http.",
+	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "otlp_http",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "OTLP HTTP base URL (e.g. http://localhost:4318). /v1/logs is appended automatically. Mutually exclusive with otlp_grpc.",
+	},
+}
+
 //export FLBPluginRegister
 func FLBPluginRegister(def unsafe.Pointer) int {
-	return output.FLBPluginRegister(def, pluginName, "Go output plugin")
+	return output.FLBPluginRegisterWithConfigMap(def, pluginName, "Go OTLP output plugin", pluginConfigMap)
 }
 
 //export FLBPluginInit
@@ -54,9 +85,6 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		logger: slog.New(baseHandler.WithGroup(id)),
 	}
 	queueDir := output.FLBPluginConfigKey(plugin, "queue_dir")
-	if queueDir == "" {
-		queueDir = "/tmp/fluent-bit-bbolt"
-	}
 
 	otlpHTTP := output.FLBPluginConfigKey(plugin, "otlp_http")
 	otlpGRPC := output.FLBPluginConfigKey(plugin, "otlp_grpc")
