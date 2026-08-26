@@ -252,16 +252,25 @@ final stage assembles both into a `scratch` image.
 
 ## Releases
 
-Pushing a semver tag (`v*`) to `main` triggers the release workflow, which
-builds the multi-arch image, pushes it to GHCR with three tag aliases
-(`vX.Y.Z`, `vX.Y`, `vX`) plus attaches an SBOM and provenance attestation,
-and creates a GitHub Release entry with auto-generated notes from the
-Conventional Commit history since the previous tag.
+Releases are driven by the `VERSION` file in the repo root. Bumping it to a
+non-`-dev` value on `main` triggers the release workflow, which:
+
+1. Builds native `linux/amd64` and `linux/arm64` images in parallel
+2. Assembles and pushes a multi-arch manifest to GHCR (`vX.Y.Z` and `latest`)
+3. Creates the git tag and a GitHub Release with auto-generated notes
+   categorised by Conventional Commit type
+
+To cut a release, update `VERSION` and push directly to `main`:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+echo "v0.3.0" > VERSION
+git add VERSION
+git commit -m "chore: release v0.3.0"
+git push
 ```
+
+The workflow skips automatically if the version contains `-dev` or if the tag
+already exists — safe to re-run via `workflow_dispatch`.
 
 Published releases and their generated notes live on the
 [Releases page](https://github.com/nickytd/fluent-bit-output-go/releases).
