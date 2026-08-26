@@ -204,8 +204,8 @@ spec:
   initContainers:
     - name: install-plugin
       # Pin to a released tag for reproducible deployments. Also available
-      # as :latest (tracks the newest tag), :v0 (major), and :v0.1 (minor).
-      image: ghcr.io/nickytd/fluent-bit-output-go:v0.1.0
+      # as :latest (tracks the newest tag), :v0 (major), and :v0.2 (minor).
+      image: ghcr.io/nickytd/fluent-bit-output-go:v0.2.0
       volumeMounts:
         - name: plugin
           mountPath: /output
