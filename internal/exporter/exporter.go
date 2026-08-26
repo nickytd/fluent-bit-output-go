@@ -1,3 +1,6 @@
+// Copyright 2026 nickytd
+// SPDX-License-Identifier: Apache-2.0
+
 // Package exporter carries the OTLP exporter implementations used by the
 // plugin's consumer goroutine. Three concrete backends are provided:
 // stdout (OTLP JSON, for debugging), OTLP/HTTP (protobuf POST), and

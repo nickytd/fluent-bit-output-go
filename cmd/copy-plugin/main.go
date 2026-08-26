@@ -1,3 +1,6 @@
+// Copyright 2026 nickytd
+// SPDX-License-Identifier: Apache-2.0
+
 // Package main implements a tiny copy tool intended to run as an initContainer
 // entrypoint. It copies /plugin/go-out.so (baked into the plugin image) into a
 // user-supplied destination directory that is expected to be a shared volume
@@ -22,7 +25,7 @@ func main() {
 	perm := flag.Uint("perm", 0o755, "octal file mode for the copied plugin")
 	flag.Parse()
 
-	if err := run(*src, *dst, os.FileMode(*perm)); err != nil {
+	if err := run(*src, *dst, os.FileMode(*perm)); err != nil { //nolint:gosec // uint→uint32: perm flag is validated by flag.Uint, value is always a valid file mode
 		log.Fatalf("copy-plugin: %v", err)
 	}
 }
@@ -53,7 +56,7 @@ func run(src, dst string, perm os.FileMode) error {
 }
 
 func copyFile(src, dst string, perm os.FileMode) error {
-	in, err := os.Open(src)
+	in, err := os.Open(src) //nolint:gosec // G304: src is the plugin path supplied by the operator via a CLI flag, not user input
 	if err != nil {
 		return err
 	}
