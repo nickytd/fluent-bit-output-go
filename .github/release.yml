@@ -1,0 +1,25 @@
+changelog:
+  categories:
+    - title: "Features"
+      labels:
+        - feat
+      exclude:
+        labels:
+          - ignore
+    - title: "Bug Fixes"
+      labels:
+        - fix
+    - title: "Documentation"
+      labels:
+        - docs
+    - title: "Build & Tooling"
+      labels:
+        - chore
+        - ci
+        - build
+    - title: "Refactoring"
+      labels:
+        - refactor
+    - title: "Tests"
+      labels:
+        - test
