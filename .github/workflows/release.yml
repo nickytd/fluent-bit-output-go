@@ -107,30 +107,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
-        id: meta
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=${{ needs.prepare.outputs.version }}
-            type=raw,value=latest
-          labels: |
-            org.opencontainers.image.title=fluent-bit-output-go
-            org.opencontainers.image.description=OTLP output plugin for Fluent Bit (initContainer image)
-            org.opencontainers.image.licenses=Apache-2.0
+      - uses: docker/setup-buildx-action@v4
 
       - name: Create and push multi-arch manifest
-        uses: docker/build-push-action@v7
-        with:
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          push: true
-          provenance: mode=max
-          sbom: true
-          cache-from: |
-            type=registry,ref=ghcr.io/${{ github.repository }}:${{ needs.prepare.outputs.version }}-amd64
-            type=registry,ref=ghcr.io/${{ github.repository }}:${{ needs.prepare.outputs.version }}-arm64
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          REPO="ghcr.io/${{ github.repository }}"
+          docker buildx imagetools create \
+            --tag "${REPO}:${VERSION}" \
+            --tag "${REPO}:latest" \
+            "${REPO}:${VERSION}-amd64" \
+            "${REPO}:${VERSION}-arm64"
 
   release:
     name: Create GitHub Release
