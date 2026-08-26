@@ -1,7 +1,10 @@
 # fluent-bit-output-go
 
 [![CI](https://github.com/nickytd/fluent-bit-output-go/actions/workflows/ci.yml/badge.svg)](https://github.com/nickytd/fluent-bit-output-go/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/nickytd/fluent-bit-output-go?display_name=tag&sort=semver)](https://github.com/nickytd/fluent-bit-output-go/releases)
+[![Release](https://github.com/nickytd/fluent-bit-output-go/actions/workflows/release.yml/badge.svg)](https://github.com/nickytd/fluent-bit-output-go/actions/workflows/release.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/nickytd/fluent-bit-output-go)](go.mod)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/nickytd/fluent-bit-output-go?style=flat)](https://github.com/nickytd/fluent-bit-output-go/releases)
 
 A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as
 a C shared library. It converts log records from Fluent Bit's pipeline into
