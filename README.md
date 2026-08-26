@@ -252,21 +252,23 @@ final stage assembles both into a `scratch` image.
 
 ## Releases
 
-Releases are driven by the `VERSION` file in the repo root. Bumping it to a
-non-`-dev` value on `main` triggers the release workflow, which:
+Releases are driven by the `VERSION` file in the repo root. Merging a PR that
+bumps it to a non-`-dev` value triggers the release workflow, which:
 
 1. Builds native `linux/amd64` and `linux/arm64` images in parallel
 2. Assembles and pushes a multi-arch manifest to GHCR (`vX.Y.Z` and `latest`)
 3. Creates the git tag and a GitHub Release with auto-generated notes
    categorised by Conventional Commit type
 
-To cut a release, update `VERSION` and push directly to `main`:
+To cut a release, open a PR that bumps `VERSION`:
 
 ```bash
+git checkout -b chore/release-v0.3.0
 echo "v0.3.0" > VERSION
 git add VERSION
 git commit -m "chore: release v0.3.0"
-git push
+git push -u origin chore/release-v0.3.0
+# open PR → merge → release workflow fires automatically
 ```
 
 The workflow skips automatically if the version contains `-dev` or if the tag
