@@ -46,11 +46,10 @@ Runtime:
 
 Build / development:
 
-- Go 1.26+
+- Go 1.27+
 - gcc (for the cgo build of `-buildmode=c-shared`)
 - [OTel Collector](https://opentelemetry.io/docs/collector/) (`otelcol`
   binary, only for the e2e tests)
-- [golangci-lint](https://golangci-lint.run/) v2 (only for `make lint`)
 
 ## Build
 
@@ -282,4 +281,4 @@ readers evaluating alternative KV backends.
 
 ## License
 
-MIT
+Apache-2.0 — see [LICENSE](LICENSE) and [LICENSES/](LICENSES/).
