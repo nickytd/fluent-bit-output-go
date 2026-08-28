@@ -82,6 +82,11 @@ pipeline:
       # queue_dir: /tmp/fluent-bit-bbolt
       # otlp_grpc: localhost:4317
       # otlp_http: http://localhost:4318
+      # otlp_http_headers: "Authorization=Bearer token,X-Tenant=acme"
+      # timeout: 10s
+      # tls_ca_file: /etc/ssl/certs/ca.pem
+      # tls_cert_file: /etc/ssl/certs/client.crt
+      # tls_key_file: /etc/ssl/private/client.key
 ```
 
 ### Configuration Keys
@@ -92,6 +97,12 @@ pipeline:
 | `queue_dir` | `/tmp/fluent-bit-bbolt` | Directory holding the bbolt `queue.db` file |
 | `otlp_grpc` | *(none)* | OTLP gRPC endpoint (e.g. `localhost:4317`) |
 | `otlp_http` | *(none)* | OTLP HTTP base URL (e.g. `http://localhost:4318`; `/v1/logs` is appended automatically) |
+| `otlp_http_headers` | *(none)* | Comma-separated extra HTTP headers for every OTLP/HTTP request (e.g. `Authorization=Bearer token,X-Tenant=acme`) |
+| `timeout` | `10s` | Per-request export timeout. Zero means no timeout. |
+| `tls_ca_file` | *(none)* | Path to a PEM CA certificate for verifying the remote endpoint. Re-read on every TLS handshake. |
+| `tls_cert_file` | *(none)* | Path to a PEM client certificate for mTLS. Requires `tls_key_file`. Re-read on every TLS handshake. |
+| `tls_key_file` | *(none)* | Path to a PEM client key for mTLS. Requires `tls_cert_file`. Re-read on every TLS handshake. |
+| `tls_insecure_skip_verify` | *(none)* | Skip TLS certificate verification (`true`/`false`). For testing only. |
 
 If neither `otlp_grpc` nor `otlp_http` is set, records are emitted as OTLP
 JSON on stdout — useful for local debugging. Setting both is rejected at
@@ -252,27 +263,23 @@ final stage assembles both into a `scratch` image.
 
 ## Releases
 
-Releases are driven by the `VERSION` file in the repo root. Merging a PR that
-bumps it to a non-`-dev` value triggers the release workflow, which:
+Releases are tag-triggered. Push a semver tag to fire the release workflow,
+which:
 
 1. Builds native `linux/amd64` and `linux/arm64` images in parallel
 2. Assembles and pushes a multi-arch manifest to GHCR (`vX.Y.Z` and `latest`)
-3. Creates the git tag and a GitHub Release with auto-generated notes
-   categorised by Conventional Commit type
+3. Creates a GitHub Release with auto-generated notes categorised by
+   Conventional Commit type
 
-To cut a release, open a PR that bumps `VERSION`:
+To cut a release:
 
 ```bash
-git checkout -b chore/release-v0.3.0
-echo "v0.3.0" > VERSION
-git add VERSION
-git commit -m "chore: release v0.3.0"
-git push -u origin chore/release-v0.3.0
-# open PR → merge → release workflow fires automatically
+git tag -a v0.5.0 -m "Release v0.5.0"
+git push origin v0.5.0
 ```
 
-The workflow skips automatically if the version contains `-dev` or if the tag
-already exists — safe to re-run via `workflow_dispatch`.
+The release workflow fires automatically. To re-run manually use the
+`workflow_dispatch` trigger and supply the tag name.
 
 Published releases and their generated notes live on the
 [Releases page](https://github.com/nickytd/fluent-bit-output-go/releases).
