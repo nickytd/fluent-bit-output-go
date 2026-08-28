@@ -225,8 +225,8 @@ func TestQueueIntegration(t *testing.T) {
 	}
 }
 
-// seedWriteSeqFromDB mirrors the reseed step inside Init's sync.Once so the
-// restart path can be tested without touching package-level state.
+// seedWriteSeqFromDB mirrors the reseed step inside New so the restart path
+// can be tested without constructing a full Queue.
 func seedWriteSeqFromDB(t *testing.T, d *bolt.DB) uint64 {
 	t.Helper()
 	var seq uint64
@@ -299,44 +299,41 @@ func TestWriteSeqReseedOnEmptyBucket(t *testing.T) {
 	}
 }
 
-// TestInitAfterShutdownReopensDB is the regression test for issue #14.
-// Before the fix, Init used sync.Once so a call after Shutdown was silently
-// ignored, leaving db as a closed handle and causing every subsequent Enqueue
-// to return "bbolt put: database not open".
-func TestInitAfterShutdownReopensDB(t *testing.T) {
-	// Ensure the package starts with a clean slate regardless of test order.
-	Shutdown()
-
-	dir := t.TempDir()
+// TestNewAfterShutdownReopensDB is the per-instance equivalent of the old
+// hot-reload regression test. New must succeed after Shutdown, giving the
+// plugin a fresh queue on SIGHUP.
+func TestNewAfterShutdownReopensDB(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	dir := t.TempDir()
 	exp := &stubExporter{}
 
-	if err := Init(logger, dir, exp); err != nil {
-		t.Fatalf("first Init: %v", err)
+	q, err := New(logger, dir, exp)
+	if err != nil {
+		t.Fatalf("first New: %v", err)
 	}
 
 	// Enqueue one payload to confirm the queue is open.
-	logs := newLogsWithBody("before-reload")
 	marshaler := &plog.ProtoMarshaler{}
-	data, err := marshaler.MarshalLogs(logs)
+	data, err := marshaler.MarshalLogs(newLogsWithBody("before-reload"))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := Enqueue(data); err != nil {
+	if err := q.Enqueue(data); err != nil {
 		t.Fatalf("Enqueue before reload: %v", err)
 	}
 
-	// Simulate FLBPluginUnregister.
-	Shutdown()
+	// Simulate FLBPluginExitCtx.
+	q.Shutdown()
 
 	// Simulate FLBPluginInit on hot-reload — must re-open the DB.
-	if err := Init(logger, dir, exp); err != nil {
-		t.Fatalf("Init after Shutdown: %v", err)
+	q2, err := New(logger, dir, exp)
+	if err != nil {
+		t.Fatalf("New after Shutdown: %v", err)
 	}
-	t.Cleanup(Shutdown)
+	t.Cleanup(q2.Shutdown)
 
 	// Enqueue must succeed with a live DB handle.
-	if err := Enqueue(data); err != nil {
+	if err := q2.Enqueue(data); err != nil {
 		t.Fatalf("Enqueue after hot-reload: %v (database not re-opened)", err)
 	}
 
