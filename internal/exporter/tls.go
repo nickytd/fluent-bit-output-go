@@ -53,7 +53,7 @@ func NewDynamicTLSConfig(s TLSSettings) (*tls.Config, error) {
 	}
 
 	cfg := &tls.Config{
-		InsecureSkipVerify: s.InsecureSkipVerify, //nolint:gosec // user-controlled opt-in
+		InsecureSkipVerify: s.InsecureSkipVerify, // #nosec G402 -- user-controlled opt-in via plugin config
 	}
 
 	if s.CertFile != "" {
@@ -87,14 +87,14 @@ func NewDynamicTLSConfig(s TLSSettings) (*tls.Config, error) {
 		}
 		// Disable the default verification so our VerifyConnection callback is
 		// the sole verifier (avoids double verification with stale system roots).
-		cfg.InsecureSkipVerify = true //nolint:gosec // VerifyConnection replaces it
+		cfg.InsecureSkipVerify = true // #nosec G402 -- standard verification is replaced by VerifyConnection callback
 	}
 
 	return cfg, nil
 }
 
 func loadCACertPool(caFile string) (*x509.CertPool, error) {
-	pem, err := os.ReadFile(caFile) //nolint:gosec // path comes from plugin config, not user input
+	pem, err := os.ReadFile(caFile) // #nosec G304 -- path comes from plugin config supplied by the operator, not user input
 	if err != nil {
 		return nil, fmt.Errorf("read CA file %q: %w", caFile, err)
 	}
