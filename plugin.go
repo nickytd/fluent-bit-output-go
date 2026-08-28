@@ -65,6 +65,13 @@ var pluginConfigMap = []output.ConfigMap{
 		Flags:    0,
 		Desc:     "OTLP HTTP base URL (e.g. http://localhost:4318). /v1/logs is appended automatically. Mutually exclusive with otlp_grpc.",
 	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "otlp_http_headers",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Comma-separated extra HTTP headers attached to every OTLP/HTTP request, e.g. \"Authorization=Bearer token,X-Tenant=acme\".",
+	},
 }
 
 //export FLBPluginRegister
@@ -107,7 +114,12 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			return output.FLB_ERROR
 		}
 	case otlpHTTP != "":
-		exp = exporter.NewHTTP(otlpHTTP)
+		headers, err := exporter.ParseHeaders(output.FLBPluginConfigKey(plugin, "otlp_http_headers"))
+		if err != nil {
+			inst.logger.Error("invalid otlp_http_headers", "err", err)
+			return output.FLB_ERROR
+		}
+		exp = exporter.NewHTTP(otlpHTTP, headers)
 	default:
 		exp = exporter.NewStdout()
 	}
