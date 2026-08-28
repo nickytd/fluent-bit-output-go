@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
@@ -61,12 +62,26 @@ type httpExporter struct {
 
 // NewHTTP returns an Exporter that POSTs OTLP/HTTP protobuf to endpoint+"/v1/logs".
 // headers (may be nil) are attached to every request after Content-Type.
-func NewHTTP(endpoint string, headers http.Header) Exporter {
+// timeout is applied as http.Client.Timeout; zero means no timeout.
+func NewHTTP(endpoint string, headers http.Header, timeout time.Duration) Exporter {
 	return &httpExporter{
 		endpoint: endpoint + "/v1/logs",
 		headers:  headers,
-		client:   &http.Client{},
+		client:   &http.Client{Timeout: timeout},
 	}
+}
+
+// ParseTimeout parses a duration string (e.g. "10s", "1m") into a time.Duration.
+// An empty string returns 0 (no timeout) without error.
+func ParseTimeout(raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid timeout %q: %w", raw, err)
+	}
+	return d, nil
 }
 
 // ParseHeaders parses a comma-separated list of "Name=Value" pairs into an
@@ -120,13 +135,15 @@ func (e *httpExporter) Shutdown(_ context.Context) error {
 }
 
 type grpcExporter struct {
-	client plogotlp.GRPCClient
-	conn   *grpc.ClientConn
+	client  plogotlp.GRPCClient
+	conn    *grpc.ClientConn
+	timeout time.Duration
 }
 
 // NewGRPC returns an Exporter that sends via plogotlp.GRPCClient over an
 // insecure gRPC channel. TLS/credentials configuration is not yet exposed.
-func NewGRPC(endpoint string) (Exporter, error) {
+// timeout is applied per Export call via context.WithTimeout; zero means no timeout.
+func NewGRPC(endpoint string, timeout time.Duration) (Exporter, error) {
 	conn, err := grpc.NewClient(endpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
@@ -134,12 +151,18 @@ func NewGRPC(endpoint string) (Exporter, error) {
 		return nil, fmt.Errorf("grpc dial: %w", err)
 	}
 	return &grpcExporter{
-		client: plogotlp.NewGRPCClient(conn),
-		conn:   conn,
+		client:  plogotlp.NewGRPCClient(conn),
+		conn:    conn,
+		timeout: timeout,
 	}, nil
 }
 
 func (e *grpcExporter) Export(ctx context.Context, logs plog.Logs) error {
+	if e.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, e.timeout)
+		defer cancel()
+	}
 	req := plogotlp.NewExportRequestFromLogs(logs)
 	_, err := e.client.Export(ctx, req)
 	if err != nil {

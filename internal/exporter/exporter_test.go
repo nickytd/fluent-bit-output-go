@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/plog"
 )
@@ -86,7 +87,7 @@ func TestHTTPExporterSendsHeaders(t *testing.T) {
 		t.Fatalf("ParseHeaders: %v", err)
 	}
 
-	exp := NewHTTP(srv.URL, headers)
+	exp := NewHTTP(srv.URL, headers, 0)
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -110,7 +111,7 @@ func TestHTTPExporterNoHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, nil)
+	exp := NewHTTP(srv.URL, nil, 0)
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -119,5 +120,56 @@ func TestHTTPExporterNoHeaders(t *testing.T) {
 
 	if gotContentType != "application/x-protobuf" {
 		t.Errorf("Content-Type: got %q, want %q", gotContentType, "application/x-protobuf")
+	}
+}
+
+func TestParseTimeout_empty(t *testing.T) {
+	d, err := ParseTimeout("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d != 0 {
+		t.Fatalf("expected 0, got %v", d)
+	}
+}
+
+func TestParseTimeout_valid(t *testing.T) {
+	d, err := ParseTimeout("10s")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if d != 10*time.Second {
+		t.Errorf("got %v, want 10s", d)
+	}
+}
+
+func TestParseTimeout_invalid(t *testing.T) {
+	_, err := ParseTimeout("abc")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestHTTPExporterTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// hang longer than the exporter timeout
+		time.Sleep(500 * time.Millisecond)
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	exp := NewHTTP(srv.URL, nil, 50*time.Millisecond)
+	defer func() { _ = exp.Shutdown(context.Background()) }()
+
+	start := time.Now()
+	err := exp.Export(context.Background(), plog.NewLogs())
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if elapsed > 300*time.Millisecond {
+		t.Errorf("Export took %v, expected it to time out well under 300ms", elapsed)
 	}
 }
