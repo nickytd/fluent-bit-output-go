@@ -79,6 +79,34 @@ var pluginConfigMap = []output.ConfigMap{
 		Flags:    0,
 		Desc:     "Per-request export timeout (e.g. 10s, 1m). Defaults to 10s.",
 	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "tls_ca_file",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Path to a PEM-encoded CA certificate file for verifying the remote endpoint.",
+	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "tls_cert_file",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Path to a PEM-encoded client certificate file for mTLS. Requires tls_key_file.",
+	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "tls_key_file",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Path to a PEM-encoded client key file for mTLS. Requires tls_cert_file.",
+	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "tls_insecure_skip_verify",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Skip TLS certificate verification (true/false). For testing only.",
+	},
 }
 
 //export FLBPluginRegister
@@ -117,10 +145,21 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		return output.FLB_ERROR
 	}
 
+	tlsCfg, err := exporter.NewDynamicTLSConfig(exporter.TLSSettings{
+		CAFile:             output.FLBPluginConfigKey(plugin, "tls_ca_file"),
+		CertFile:           output.FLBPluginConfigKey(plugin, "tls_cert_file"),
+		KeyFile:            output.FLBPluginConfigKey(plugin, "tls_key_file"),
+		InsecureSkipVerify: output.FLBPluginConfigKey(plugin, "tls_insecure_skip_verify") == "true",
+	})
+	if err != nil {
+		inst.logger.Error("invalid TLS config", "err", err)
+		return output.FLB_ERROR
+	}
+
 	var exp exporter.Exporter
 	switch {
 	case otlpGRPC != "":
-		exp, err = exporter.NewGRPC(otlpGRPC, timeout)
+		exp, err = exporter.NewGRPC(otlpGRPC, timeout, tlsCfg)
 		if err != nil {
 			inst.logger.Error("failed to create grpc exporter", "err", err)
 			return output.FLB_ERROR
@@ -131,7 +170,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			inst.logger.Error("invalid otlp_http_headers", "err", err)
 			return output.FLB_ERROR
 		}
-		exp = exporter.NewHTTP(otlpHTTP, headers, timeout)
+		exp = exporter.NewHTTP(otlpHTTP, headers, timeout, tlsCfg)
 	default:
 		exp = exporter.NewStdout()
 	}
