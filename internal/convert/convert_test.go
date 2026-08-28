@@ -352,12 +352,12 @@ func TestProcessRecords_ResourceAttributesFlat(t *testing.T) {
 		{
 			Timestamp: output.FLBTime{Time: time.Unix(1700000000, 0)},
 			Record: map[any]any{
-				"message":           "hello",
-				"host.name":         "node-1",
+				"message":            "hello",
+				"host.name":          "node-1",
 				"k8s.namespace.name": "monitoring",
-				"k8s.pod.name":      "grafana-abc",
+				"k8s.pod.name":       "grafana-abc",
 				"k8s.container.name": "grafana",
-				"extra":             "stays-in-record",
+				"extra":              "stays-in-record",
 			},
 		},
 	}

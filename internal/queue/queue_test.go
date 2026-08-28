@@ -5,6 +5,8 @@ package queue
 
 import (
 	"encoding/binary"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
@@ -294,5 +296,56 @@ func TestWriteSeqReseedOnEmptyBucket(t *testing.T) {
 	d := openTestDB(t)
 	if got := seedWriteSeqFromDB(t, d); got != 0 {
 		t.Fatalf("empty bucket: got %d, want 0", got)
+	}
+}
+
+// TestInitAfterShutdownReopensDB is the regression test for issue #14.
+// Before the fix, Init used sync.Once so a call after Shutdown was silently
+// ignored, leaving db as a closed handle and causing every subsequent Enqueue
+// to return "bbolt put: database not open".
+func TestInitAfterShutdownReopensDB(t *testing.T) {
+	// Ensure the package starts with a clean slate regardless of test order.
+	Shutdown()
+
+	dir := t.TempDir()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	exp := &stubExporter{}
+
+	if err := Init(logger, dir, exp); err != nil {
+		t.Fatalf("first Init: %v", err)
+	}
+
+	// Enqueue one payload to confirm the queue is open.
+	logs := newLogsWithBody("before-reload")
+	marshaler := &plog.ProtoMarshaler{}
+	data, err := marshaler.MarshalLogs(logs)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := Enqueue(data); err != nil {
+		t.Fatalf("Enqueue before reload: %v", err)
+	}
+
+	// Simulate FLBPluginUnregister.
+	Shutdown()
+
+	// Simulate FLBPluginInit on hot-reload — must re-open the DB.
+	if err := Init(logger, dir, exp); err != nil {
+		t.Fatalf("Init after Shutdown: %v", err)
+	}
+	t.Cleanup(Shutdown)
+
+	// Enqueue must succeed with a live DB handle.
+	if err := Enqueue(data); err != nil {
+		t.Fatalf("Enqueue after hot-reload: %v (database not re-opened)", err)
+	}
+
+	// Give the consumer a moment to drain so Shutdown in Cleanup does not race.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if exp.callCount() >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

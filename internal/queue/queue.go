@@ -8,9 +8,10 @@
 // in-memory sequence counter is reseeded from the bucket's last key so a
 // restart with un-drained items never overwrites them.
 //
-// The package intentionally keeps its state at package scope; the plugin's
-// cgo entry points are a single-instance surface, and the sync.Once around
-// Init makes the queue a process-wide singleton by design.
+// The package keeps its state at package scope; the plugin's cgo entry points
+// are a single-instance surface. Init is idempotent while the queue is open
+// and re-initialises fully after Shutdown, supporting Fluent Bit hot-reload
+// (SIGHUP → FLBPluginUnregister → FLBPluginInit in the same process).
 package queue
 
 import (
@@ -29,61 +30,65 @@ import (
 )
 
 var (
-	bucketName = []byte("logs")
-	queueOnce  sync.Once
-	db         *bolt.DB
-	writeSeq   atomic.Uint64
-	mu         sync.Mutex
-	cond       *sync.Cond
-	cancelFn   context.CancelFunc
-	queueDone  chan struct{}
+	bucketName  = []byte("logs")
+	initMu      sync.Mutex
+	initialized bool
+	db          *bolt.DB
+	writeSeq    atomic.Uint64
+	mu          sync.Mutex
+	cond        *sync.Cond
+	cancelFn    context.CancelFunc
+	queueDone   chan struct{}
 )
 
 // Init opens the bbolt file under dir, spawns the consumer goroutine, and
-// wires the given Exporter as the drain target. It is safe to call multiple
-// times; only the first call takes effect (sync.Once).
+// wires the given Exporter as the drain target. It is idempotent while the
+// queue is open and re-initialises fully after Shutdown (hot-reload support).
 func Init(logger *slog.Logger, dir string, exp exporter.Exporter) error {
-	var initErr error
-	queueOnce.Do(func() {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			initErr = fmt.Errorf("create queue dir: %w", err)
-			return
-		}
-		d, err := bolt.Open(filepath.Join(dir, "queue.db"), 0o600, nil)
-		if err != nil {
-			initErr = fmt.Errorf("open bbolt: %w", err)
-			return
-		}
-		if err := d.Update(func(tx *bolt.Tx) error {
-			_, err := tx.CreateBucketIfNotExists(bucketName)
-			return err
-		}); err != nil {
-			_ = d.Close()
-			initErr = fmt.Errorf("create bucket: %w", err)
-			return
-		}
-		// Reseed writeSeq from the last key already on disk so a restart with
-		// un-drained items does not overwrite them by starting again from seq=1.
-		if err := d.View(func(tx *bolt.Tx) error {
-			k, _ := tx.Bucket(bucketName).Cursor().Last()
-			if len(k) == 8 {
-				writeSeq.Store(binary.BigEndian.Uint64(k))
-			}
-			return nil
-		}); err != nil {
-			_ = d.Close()
-			initErr = fmt.Errorf("seed writeSeq: %w", err)
-			return
-		}
-		db = d
-		cond = sync.NewCond(&mu)
-		queueDone = make(chan struct{})
+	initMu.Lock()
+	defer initMu.Unlock()
 
-		ctx, cancel := context.WithCancel(context.Background())
-		cancelFn = cancel
-		go runConsumer(ctx, logger, exp, queueDone)
-	})
-	return initErr
+	if initialized {
+		return nil
+	}
+
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("create queue dir: %w", err)
+	}
+	d, err := bolt.Open(filepath.Join(dir, "queue.db"), 0o600, nil)
+	if err != nil {
+		return fmt.Errorf("open bbolt: %w", err)
+	}
+	if err := d.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(bucketName)
+		return err
+	}); err != nil {
+		_ = d.Close()
+		return fmt.Errorf("create bucket: %w", err)
+	}
+	// Reseed writeSeq from the last key already on disk so a restart with
+	// un-drained items does not overwrite them by starting again from seq=1.
+	if err := d.View(func(tx *bolt.Tx) error {
+		k, _ := tx.Bucket(bucketName).Cursor().Last()
+		if len(k) == 8 {
+			writeSeq.Store(binary.BigEndian.Uint64(k))
+		}
+		return nil
+	}); err != nil {
+		_ = d.Close()
+		return fmt.Errorf("seed writeSeq: %w", err)
+	}
+
+	db = d
+	cond = sync.NewCond(&mu)
+	queueDone = make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelFn = cancel
+	go runConsumer(ctx, logger, exp, queueDone)
+
+	initialized = true
+	return nil
 }
 
 // Enqueue writes one marshalled plog.Logs batch to the bbolt bucket under
@@ -101,19 +106,30 @@ func Enqueue(data []byte) error {
 	return nil
 }
 
-// Shutdown cancels the consumer, waits for it to exit, and closes the
-// underlying bbolt DB. Safe to call from a non-init goroutine.
+// Shutdown cancels the consumer, waits for it to exit, closes the underlying
+// bbolt DB, and resets all package state so Init can be called again. This
+// supports Fluent Bit hot-reload: FLBPluginUnregister calls Shutdown, then
+// the subsequent FLBPluginInit calls Init and gets a fresh queue.
 func Shutdown() {
+	initMu.Lock()
+	defer initMu.Unlock()
+
 	if cancelFn != nil {
 		cancelFn()
+		cancelFn = nil
 	}
 	if cond != nil {
 		cond.Broadcast()
 	}
 	if queueDone != nil {
 		<-queueDone
+		queueDone = nil
 	}
 	if db != nil {
 		_ = db.Close()
+		db = nil
 	}
+	cond = nil
+	writeSeq.Store(0)
+	initialized = false
 }
