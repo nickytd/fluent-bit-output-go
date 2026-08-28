@@ -33,6 +33,12 @@ into a shared volume for a co-located `fluent-bit` container to load with `-e`.
   - `trace_id` (hex string) → `LogRecord.TraceID`
   - `span_id` (hex string) → `LogRecord.SpanID`
   - everything else → `LogRecord.Attributes`
+- **Resource attribute promotion** via `resource_attributes` — a
+  comma-separated list of record field names to route to OTLP resource
+  attributes instead of log record attributes. Backends such as
+  VictoriaLogs automatically promote resource attributes to stream
+  fields (indexed), making this key useful for fields like `host.name`,
+  `k8s.namespace.name`, `k8s.pod.name`, `k8s.container.name`.
 - **Persistent queue** via bbolt B+ tree — records survive plugin/process
   restarts and endpoint outages, then drain in FIFO order when the endpoint
   recovers. Delivery semantics are **at-least-once**: a record enqueued to
@@ -82,7 +88,8 @@ pipeline:
       # queue_dir: /tmp/fluent-bit-bbolt
       # otlp_grpc: localhost:4317
       # otlp_http: http://localhost:4318
-      # otlp_http_headers: "Authorization=Bearer token,X-Tenant=acme"
+      # otlp_http_headers: "Authorization=Bearer token;X-Tenant=acme"
+      # resource_attributes: "host.name,k8s.namespace.name,k8s.pod.name,k8s.container.name"
       # timeout: 10s
       # tls_ca_file: /etc/ssl/certs/ca.pem
       # tls_cert_file: /etc/ssl/certs/client.crt
@@ -103,6 +110,7 @@ pipeline:
 | `tls_cert_file` | *(none)* | Path to a PEM client certificate for mTLS. Requires `tls_key_file`. Re-read on every TLS handshake. |
 | `tls_key_file` | *(none)* | Path to a PEM client key for mTLS. Requires `tls_cert_file`. Re-read on every TLS handshake. |
 | `tls_insecure_skip_verify` | *(none)* | Skip TLS certificate verification (`true`/`false`). For testing only. |
+| `resource_attributes` | *(none)* | Comma-separated record field names to promote to OTLP resource attributes instead of log record attributes (e.g. `host.name,k8s.namespace.name,k8s.pod.name,k8s.container.name`). Resource attributes become stream fields in VictoriaLogs. |
 
 If neither `otlp_grpc` nor `otlp_http` is set, records are emitted as OTLP
 JSON on stdout — useful for local debugging. Setting both is rejected at
