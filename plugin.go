@@ -75,9 +75,9 @@ var pluginConfigMap = []output.ConfigMap{
 	{
 		Type:     output.FLB_CONFIG_MAP_STR,
 		Name:     "timeout",
-		DefValue: "",
+		DefValue: "10s",
 		Flags:    0,
-		Desc:     "Per-request export timeout (e.g. 10s, 1m). Zero or unset means no timeout.",
+		Desc:     "Per-request export timeout (e.g. 10s, 1m). Defaults to 10s.",
 	},
 }
 
