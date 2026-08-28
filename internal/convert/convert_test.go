@@ -23,7 +23,7 @@ func TestProcessRecords_StandardFlatRecord(t *testing.T) {
 		},
 	}
 
-	logs := ProcessRecords(records)
+	logs := ProcessRecords(records, nil)
 
 	if logs.ResourceLogs().Len() != 1 {
 		t.Fatalf("expected 1 ResourceLogs, got %d", logs.ResourceLogs().Len())
@@ -71,7 +71,7 @@ func TestProcessRecords_OTelFields(t *testing.T) {
 		},
 	}
 
-	logs := ProcessRecords(records)
+	logs := ProcessRecords(records, nil)
 	lr := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
 
 	if lr.Body().Str() != "request completed" {
@@ -134,7 +134,7 @@ func TestProcessRecords_OTelEnvelopeGroup(t *testing.T) {
 		},
 	}
 
-	logs := ProcessRecords(records)
+	logs := ProcessRecords(records, nil)
 
 	if logs.ResourceLogs().Len() != 1 {
 		t.Fatalf("expected 1 ResourceLogs, got %d", logs.ResourceLogs().Len())
@@ -213,7 +213,7 @@ func TestProcessRecords_MixedBatch(t *testing.T) {
 		},
 	}
 
-	logs := ProcessRecords(records)
+	logs := ProcessRecords(records, nil)
 
 	if logs.ResourceLogs().Len() != 3 {
 		t.Fatalf("expected 3 ResourceLogs (flat + grouped + flat), got %d", logs.ResourceLogs().Len())
@@ -248,7 +248,7 @@ func TestProcessRecords_MixedBatch(t *testing.T) {
 }
 
 func TestProcessRecords_EmptyBatch(t *testing.T) {
-	logs := ProcessRecords(nil)
+	logs := ProcessRecords(nil, nil)
 	if logs.ResourceLogs().Len() != 0 {
 		t.Errorf("expected 0 ResourceLogs for nil input, got %d", logs.ResourceLogs().Len())
 	}
@@ -344,5 +344,148 @@ func TestToInt(t *testing.T) {
 		if got != tt.want || ok != tt.ok {
 			t.Errorf("toInt(%v): got (%d, %v), want (%d, %v)", tt.input, got, ok, tt.want, tt.ok)
 		}
+	}
+}
+
+func TestProcessRecords_ResourceAttributesFlat(t *testing.T) {
+	records := []DecodedRecord{
+		{
+			Timestamp: output.FLBTime{Time: time.Unix(1700000000, 0)},
+			Record: map[any]any{
+				"message":           "hello",
+				"host.name":         "node-1",
+				"k8s.namespace.name": "monitoring",
+				"k8s.pod.name":      "grafana-abc",
+				"k8s.container.name": "grafana",
+				"extra":             "stays-in-record",
+			},
+		},
+	}
+
+	resAttrs := map[string]struct{}{
+		"host.name":          {},
+		"k8s.namespace.name": {},
+		"k8s.pod.name":       {},
+		"k8s.container.name": {},
+	}
+
+	logs := ProcessRecords(records, resAttrs)
+
+	if logs.ResourceLogs().Len() != 1 {
+		t.Fatalf("expected 1 ResourceLogs, got %d", logs.ResourceLogs().Len())
+	}
+
+	rl := logs.ResourceLogs().At(0)
+	lr := rl.ScopeLogs().At(0).LogRecords().At(0)
+
+	// promoted fields must be in resource attributes
+	for _, key := range []string{"host.name", "k8s.namespace.name", "k8s.pod.name", "k8s.container.name"} {
+		v, ok := rl.Resource().Attributes().Get(key)
+		if !ok {
+			t.Errorf("resource attribute %q missing", key)
+			continue
+		}
+		if v.Str() == "" {
+			t.Errorf("resource attribute %q is empty", key)
+		}
+		// must NOT also appear in log record attributes
+		if _, found := lr.Attributes().Get(key); found {
+			t.Errorf("promoted field %q should not appear in log record attributes", key)
+		}
+	}
+
+	// non-promoted field stays in log record attributes
+	extra, ok := lr.Attributes().Get("extra")
+	if !ok || extra.Str() != "stays-in-record" {
+		t.Errorf("expected extra=stays-in-record in log record attrs, got %v", extra)
+	}
+
+	// body correctly set
+	if lr.Body().Str() != "hello" {
+		t.Errorf("expected body=hello, got %s", lr.Body().Str())
+	}
+}
+
+func TestProcessRecords_ResourceAttributesInGroup(t *testing.T) {
+	records := []DecodedRecord{
+		{
+			Timestamp: output.FLBTime{Time: time.Unix(groupStartTS, 0)},
+			Record: map[any]any{
+				"resource": map[any]any{
+					"attributes": map[any]any{
+						"service.name": "my-service",
+					},
+				},
+				"scope": map[any]any{"name": "lib"},
+			},
+		},
+		{
+			Timestamp: output.FLBTime{Time: time.Unix(1700000000, 0)},
+			Record: map[any]any{
+				"body":      "grouped log",
+				"host.name": "node-2",
+				"extra":     "record-only",
+			},
+		},
+		{
+			Timestamp: output.FLBTime{Time: time.Unix(groupEndTS, 0)},
+			Record:    map[any]any{},
+		},
+	}
+
+	resAttrs := map[string]struct{}{"host.name": {}}
+
+	logs := ProcessRecords(records, resAttrs)
+
+	if logs.ResourceLogs().Len() != 1 {
+		t.Fatalf("expected 1 ResourceLogs, got %d", logs.ResourceLogs().Len())
+	}
+
+	rl := logs.ResourceLogs().At(0)
+	lr := rl.ScopeLogs().At(0).LogRecords().At(0)
+
+	// envelope-set resource attr preserved
+	svc, ok := rl.Resource().Attributes().Get("service.name")
+	if !ok || svc.Str() != "my-service" {
+		t.Errorf("expected service.name=my-service, got %v", svc)
+	}
+
+	// promoted field added to (or overwrites) resource attrs
+	hn, ok := rl.Resource().Attributes().Get("host.name")
+	if !ok || hn.Str() != "node-2" {
+		t.Errorf("expected host.name=node-2 in resource attrs, got %v", hn)
+	}
+
+	// non-promoted field in log record attrs
+	extra, ok := lr.Attributes().Get("extra")
+	if !ok || extra.Str() != "record-only" {
+		t.Errorf("expected extra=record-only in log record attrs, got %v", extra)
+	}
+}
+
+func TestProcessRecords_ResourceAttributesNilSet(t *testing.T) {
+	records := []DecodedRecord{
+		{
+			Timestamp: output.FLBTime{Time: time.Unix(1700000000, 0)},
+			Record: map[any]any{
+				"message":   "hi",
+				"host.name": "node-3",
+			},
+		},
+	}
+
+	// nil resourceAttrs — all fields go to log record attributes as before
+	logs := ProcessRecords(records, nil)
+
+	rl := logs.ResourceLogs().At(0)
+	lr := rl.ScopeLogs().At(0).LogRecords().At(0)
+
+	if rl.Resource().Attributes().Len() != 0 {
+		t.Errorf("expected empty resource attributes with nil set, got %d", rl.Resource().Attributes().Len())
+	}
+
+	hn, ok := lr.Attributes().Get("host.name")
+	if !ok || hn.Str() != "node-3" {
+		t.Errorf("expected host.name in log record attrs with nil set, got %v", hn)
 	}
 }

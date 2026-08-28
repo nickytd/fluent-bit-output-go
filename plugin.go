@@ -12,6 +12,7 @@ import (
 	"C"
 	"fmt"
 	"log/slog"
+	"strings"
 	"unsafe"
 
 	"github.com/fluent/fluent-bit-go/output"
@@ -32,8 +33,9 @@ var baseHandler = flblog.NewStderrHandler(pluginName)
 var instanceCount int
 
 type pluginInstance struct {
-	id     string
-	logger *slog.Logger
+	id                 string
+	logger             *slog.Logger
+	resourceAttributes map[string]struct{}
 }
 
 var pluginConfigMap = []output.ConfigMap{
@@ -107,6 +109,13 @@ var pluginConfigMap = []output.ConfigMap{
 		Flags:    0,
 		Desc:     "Skip TLS certificate verification (true/false). For testing only.",
 	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "resource_attributes",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Comma-separated record field names to promote to OTLP resource attributes instead of log record attributes (e.g. \"host.name,k8s.namespace.name\"). Resource attributes become stream fields in VictoriaLogs.",
+	},
 }
 
 //export FLBPluginRegister
@@ -123,8 +132,9 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	}
 
 	inst := &pluginInstance{
-		id:     id,
-		logger: slog.New(baseHandler.WithGroup(id)),
+		id:                 id,
+		logger:             slog.New(baseHandler.WithGroup(id)),
+		resourceAttributes: parseCSVSet(output.FLBPluginConfigKey(plugin, "resource_attributes")),
 	}
 	queueDir := output.FLBPluginConfigKey(plugin, "queue_dir")
 	if queueDir == "" {
@@ -203,7 +213,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		records = append(records, convert.DecodedRecord{Timestamp: ts, Record: record})
 	}
 
-	logs := convert.ProcessRecords(records)
+	logs := convert.ProcessRecords(records, inst.resourceAttributes)
 
 	// Possible when a flush contains only envelope markers with no log records.
 	if logs.ResourceLogs().Len() == 0 {
@@ -239,3 +249,13 @@ func FLBPluginUnregister(def unsafe.Pointer) {
 }
 
 func main() {}
+
+func parseCSVSet(s string) map[string]struct{} {
+	m := make(map[string]struct{})
+	for field := range strings.SplitSeq(s, ",") {
+		if f := strings.TrimSpace(field); f != "" {
+			m[f] = struct{}{}
+		}
+	}
+	return m
+}
