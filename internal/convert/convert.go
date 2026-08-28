@@ -38,7 +38,14 @@ type DecodedRecord struct {
 // ProcessRecords collapses one FlushCtx worth of records into a single
 // plog.Logs. Envelope-group records inherit their resource and scope from
 // the group-start marker; flat records get their own ResourceLogs.
-func ProcessRecords(records []DecodedRecord) plog.Logs {
+//
+// resourceAttrs is an optional set of record field names that should be
+// written to the OTLP resource attributes instead of the log record
+// attributes. Pass nil to preserve the original behaviour (all non-special
+// fields go to log record attributes). For envelope-grouped records the
+// promoted fields overwrite any same-named attributes already set by the
+// group-start envelope.
+func ProcessRecords(records []DecodedRecord, resourceAttrs map[string]struct{}) plog.Logs {
 	logs := plog.NewLogs()
 
 	var currentRL plog.ResourceLogs
@@ -72,7 +79,7 @@ func ProcessRecords(records []DecodedRecord) plog.Logs {
 			lr := currentSL.LogRecords().AppendEmpty()
 
 			// fill in log record fields from the record
-			populateLogRecord(lr, rec.Timestamp, rec.Record)
+			populateLogRecord(lr, rec.Timestamp, rec.Record, currentRL.Resource(), resourceAttrs)
 		}
 	}
 
@@ -101,7 +108,7 @@ func extractUnixSec(ts any) int64 {
 	}
 }
 
-func populateLogRecord(lr plog.LogRecord, ts any, record map[any]any) {
+func populateLogRecord(lr plog.LogRecord, ts any, record map[any]any, resource pcommon.Resource, resourceAttrs map[string]struct{}) {
 	switch t := ts.(type) {
 	case output.FLBTime:
 		lr.SetTimestamp(pcommon.NewTimestampFromTime(t.Time))
@@ -144,7 +151,11 @@ func populateLogRecord(lr plog.LogRecord, ts any, record map[any]any) {
 				lr.SetSpanID(spanIDFromHex(s))
 			}
 		default:
-			setAttributeValue(lr.Attributes(), key, v)
+			if _, ok := resourceAttrs[key]; ok {
+				setAttributeValue(resource.Attributes(), key, v)
+			} else {
+				setAttributeValue(lr.Attributes(), key, v)
+			}
 		}
 	}
 }
