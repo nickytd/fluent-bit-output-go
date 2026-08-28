@@ -72,6 +72,13 @@ var pluginConfigMap = []output.ConfigMap{
 		Flags:    0,
 		Desc:     "Comma-separated extra HTTP headers attached to every OTLP/HTTP request, e.g. \"Authorization=Bearer token,X-Tenant=acme\".",
 	},
+	{
+		Type:     output.FLB_CONFIG_MAP_STR,
+		Name:     "timeout",
+		DefValue: "",
+		Flags:    0,
+		Desc:     "Per-request export timeout (e.g. 10s, 1m). Zero or unset means no timeout.",
+	},
 }
 
 //export FLBPluginRegister
@@ -104,11 +111,16 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		return output.FLB_ERROR
 	}
 
+	timeout, err := exporter.ParseTimeout(output.FLBPluginConfigKey(plugin, "timeout"))
+	if err != nil {
+		inst.logger.Error("invalid timeout", "err", err)
+		return output.FLB_ERROR
+	}
+
 	var exp exporter.Exporter
 	switch {
 	case otlpGRPC != "":
-		var err error
-		exp, err = exporter.NewGRPC(otlpGRPC)
+		exp, err = exporter.NewGRPC(otlpGRPC, timeout)
 		if err != nil {
 			inst.logger.Error("failed to create grpc exporter", "err", err)
 			return output.FLB_ERROR
@@ -119,7 +131,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			inst.logger.Error("invalid otlp_http_headers", "err", err)
 			return output.FLB_ERROR
 		}
-		exp = exporter.NewHTTP(otlpHTTP, headers)
+		exp = exporter.NewHTTP(otlpHTTP, headers, timeout)
 	default:
 		exp = exporter.NewStdout()
 	}
