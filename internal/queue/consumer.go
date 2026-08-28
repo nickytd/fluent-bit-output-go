@@ -15,26 +15,26 @@ import (
 )
 
 // Bounds for the export-failure backoff. On repeated Export errors the drain
-// loop would otherwise spin at full CPU because dbHasItems() stays true — one
+// loop would otherwise spin at full CPU because hasItems() stays true — one
 // key surviving the drain is enough to satisfy the wake condition immediately.
 const (
 	exportBackoffInitial = 500 * time.Millisecond
 	exportBackoffMax     = 30 * time.Second
 )
 
-func runConsumer(ctx context.Context, logger *slog.Logger, exp exporter.Exporter, done chan struct{}) {
-	defer close(done)
+func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporter.Exporter) {
+	defer close(q.done)
 	defer func() { _ = exp.Shutdown(ctx) }()
 
 	unmarshaler := &plog.ProtoUnmarshaler{}
 	backoff := exportBackoffInitial
 
 	for {
-		mu.Lock()
-		for !dbHasItems() && ctx.Err() == nil {
-			cond.Wait()
+		q.mu.Lock()
+		for !q.hasItems() && ctx.Err() == nil {
+			q.cond.Wait()
 		}
-		mu.Unlock()
+		q.mu.Unlock()
 
 		if ctx.Err() != nil {
 			return
@@ -45,7 +45,7 @@ func runConsumer(ctx context.Context, logger *slog.Logger, exp exporter.Exporter
 		// persistently-failing endpoint.
 		exportFailed := false
 		var keys [][]byte
-		_ = db.View(func(tx *bolt.Tx) error {
+		_ = q.db.View(func(tx *bolt.Tx) error {
 			c := tx.Bucket(bucketName).Cursor()
 			for k, v := c.First(); k != nil; k, v = c.Next() {
 				key := make([]byte, len(k))
@@ -77,7 +77,7 @@ func runConsumer(ctx context.Context, logger *slog.Logger, exp exporter.Exporter
 		})
 
 		if len(keys) > 0 {
-			_ = db.Update(func(tx *bolt.Tx) error {
+			_ = q.db.Update(func(tx *bolt.Tx) error {
 				b := tx.Bucket(bucketName)
 				for _, k := range keys {
 					_ = b.Delete(k)
@@ -110,9 +110,9 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func dbHasItems() bool {
+func (q *Queue) hasItems() bool {
 	var hasItems bool
-	_ = db.View(func(tx *bolt.Tx) error {
+	_ = q.db.View(func(tx *bolt.Tx) error {
 		c := tx.Bucket(bucketName).Cursor()
 		k, _ := c.First()
 		hasItems = k != nil

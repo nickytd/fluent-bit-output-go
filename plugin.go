@@ -36,6 +36,7 @@ type pluginInstance struct {
 	id                 string
 	logger             *slog.Logger
 	resourceAttributes map[string]struct{}
+	queue              *queue.Queue
 }
 
 var pluginConfigMap = []output.ConfigMap{
@@ -189,10 +190,12 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		exp = exporter.NewStdout()
 	}
 
-	if err := queue.Init(inst.logger, queueDir, exp); err != nil {
+	q, err := queue.New(inst.logger, queueDir, exp)
+	if err != nil {
 		inst.logger.Error("failed to init queue", "err", err)
 		return output.FLB_ERROR
 	}
+	inst.queue = q
 
 	inst.logger.Info("initialized instance")
 	output.FLBPluginSetContext(plugin, inst)
@@ -227,7 +230,7 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 		return output.FLB_ERROR
 	}
 
-	if err := queue.Enqueue(b); err != nil {
+	if err := inst.queue.Enqueue(b); err != nil {
 		inst.logger.Error("enqueue error", "err", err)
 		return output.FLB_RETRY
 	}
@@ -238,12 +241,12 @@ func FLBPluginFlushCtx(ctx, data unsafe.Pointer, length C.int, tag *C.char) int 
 func FLBPluginExitCtx(ctx unsafe.Pointer) int {
 	inst := output.FLBPluginGetContext(ctx).(*pluginInstance)
 	inst.logger.Info("exiting instance")
+	inst.queue.Shutdown()
 	return output.FLB_OK
 }
 
 //export FLBPluginUnregister
 func FLBPluginUnregister(def unsafe.Pointer) {
-	queue.Shutdown()
 	slog.New(baseHandler).Info("unregistering plugin")
 	output.FLBPluginUnregister(def)
 }
