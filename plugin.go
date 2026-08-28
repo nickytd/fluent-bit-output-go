@@ -121,6 +121,8 @@ var pluginConfigMap = []output.ConfigMap{
 
 //export FLBPluginRegister
 func FLBPluginRegister(def unsafe.Pointer) int {
+	v, c := buildInfo()
+	slog.New(baseHandler).Info("loading plugin", "version", v, "commit", c)
 	return output.FLBPluginRegisterWithConfigMap(def, pluginName, "Go OTLP output plugin", pluginConfigMap)
 }
 
