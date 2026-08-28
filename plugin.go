@@ -70,7 +70,7 @@ var pluginConfigMap = []output.ConfigMap{
 		Name:     "otlp_http_headers",
 		DefValue: "",
 		Flags:    0,
-		Desc:     "Comma-separated extra HTTP headers attached to every OTLP/HTTP request, e.g. \"Authorization=Bearer token,X-Tenant=acme\".",
+		Desc:     "Semicolon-separated extra HTTP headers attached to every OTLP/HTTP request, e.g. \"Authorization=Bearer token;X-Tenant=acme\". Semicolons are used as delimiter so header values may contain commas (e.g. \"VL-Stream-Fields=host.name,severity\").",
 	},
 	{
 		Type:     output.FLB_CONFIG_MAP_STR,

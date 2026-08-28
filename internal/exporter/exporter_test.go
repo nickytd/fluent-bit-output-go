@@ -25,12 +25,36 @@ func TestParseHeaders_empty(t *testing.T) {
 }
 
 func TestParseHeaders_valid(t *testing.T) {
-	h, err := ParseHeaders("Authorization=Bearer token123,X-Tenant=acme")
+	h, err := ParseHeaders("Authorization=Bearer token123;X-Tenant=acme")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := h.Get("Authorization"); got != "Bearer token123" {
 		t.Errorf("Authorization: got %q, want %q", got, "Bearer token123")
+	}
+	if got := h.Get("X-Tenant"); got != "acme" {
+		t.Errorf("X-Tenant: got %q, want %q", got, "acme")
+	}
+}
+
+func TestParseHeaders_valueWithComma(t *testing.T) {
+	// Header values may contain commas — the primary motivation for using ; as delimiter.
+	h, err := ParseHeaders("VL-Stream-Fields=host.name,severity,origin")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := h.Get("VL-Stream-Fields"); got != "host.name,severity,origin" {
+		t.Errorf("got %q, want %q", got, "host.name,severity,origin")
+	}
+}
+
+func TestParseHeaders_multipleWithCommaValues(t *testing.T) {
+	h, err := ParseHeaders("VL-Stream-Fields=host.name,severity;X-Tenant=acme")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := h.Get("VL-Stream-Fields"); got != "host.name,severity" {
+		t.Errorf("VL-Stream-Fields: got %q, want %q", got, "host.name,severity")
 	}
 	if got := h.Get("X-Tenant"); got != "acme" {
 		t.Errorf("X-Tenant: got %q, want %q", got, "acme")
@@ -82,7 +106,7 @@ func TestHTTPExporterSendsHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	headers, err := ParseHeaders("Authorization=Bearer secret,X-Tenant=acme")
+	headers, err := ParseHeaders("Authorization=Bearer secret;X-Tenant=acme")
 	if err != nil {
 		t.Fatalf("ParseHeaders: %v", err)
 	}
