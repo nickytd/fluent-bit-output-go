@@ -88,15 +88,17 @@ func ParseTimeout(raw string) (time.Duration, error) {
 	return d, nil
 }
 
-// ParseHeaders parses a comma-separated list of "Name=Value" pairs into an
+// ParseHeaders parses a semicolon-separated list of "Name=Value" pairs into an
 // http.Header. An empty string returns an empty header without error. Header
-// names are canonicalised via http.CanonicalHeaderKey.
+// names are canonicalised via http.CanonicalHeaderKey. Semicolons are used as
+// the delimiter (not commas) so that header values containing commas — such as
+// "VL-Stream-Fields=host.name,severity" — are parsed correctly.
 func ParseHeaders(raw string) (http.Header, error) {
 	if raw == "" {
 		return http.Header{}, nil
 	}
 	h := http.Header{}
-	for token := range strings.SplitSeq(raw, ",") {
+	for token := range strings.SplitSeq(raw, ";") {
 		token = strings.TrimSpace(token)
 		name, value, ok := strings.Cut(token, "=")
 		if !ok || strings.TrimSpace(name) == "" {
