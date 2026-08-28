@@ -11,8 +11,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
+	"strings"
 
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
@@ -53,15 +55,37 @@ func (e *stdoutExporter) Shutdown(_ context.Context) error {
 
 type httpExporter struct {
 	endpoint string
+	headers  http.Header
 	client   *http.Client
 }
 
 // NewHTTP returns an Exporter that POSTs OTLP/HTTP protobuf to endpoint+"/v1/logs".
-func NewHTTP(endpoint string) Exporter {
+// headers (may be nil) are attached to every request after Content-Type.
+func NewHTTP(endpoint string, headers http.Header) Exporter {
 	return &httpExporter{
 		endpoint: endpoint + "/v1/logs",
+		headers:  headers,
 		client:   &http.Client{},
 	}
+}
+
+// ParseHeaders parses a comma-separated list of "Name=Value" pairs into an
+// http.Header. An empty string returns an empty header without error. Header
+// names are canonicalised via http.CanonicalHeaderKey.
+func ParseHeaders(raw string) (http.Header, error) {
+	if raw == "" {
+		return http.Header{}, nil
+	}
+	h := http.Header{}
+	for token := range strings.SplitSeq(raw, ",") {
+		token = strings.TrimSpace(token)
+		name, value, ok := strings.Cut(token, "=")
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("invalid header %q: expected Name=Value", token)
+		}
+		h.Set(strings.TrimSpace(name), value)
+	}
+	return h, nil
 }
 
 func (e *httpExporter) Export(ctx context.Context, logs plog.Logs) error {
@@ -76,6 +100,7 @@ func (e *httpExporter) Export(ctx context.Context, logs plog.Logs) error {
 		return fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	maps.Copy(httpReq.Header, e.headers)
 
 	resp, err := e.client.Do(httpReq)
 	if err != nil {
