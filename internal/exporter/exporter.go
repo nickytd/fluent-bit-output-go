@@ -10,6 +10,7 @@ package exporter
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"maps"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -63,11 +65,13 @@ type httpExporter struct {
 // NewHTTP returns an Exporter that POSTs OTLP/HTTP protobuf to endpoint+"/v1/logs".
 // headers (may be nil) are attached to every request after Content-Type.
 // timeout is applied as http.Client.Timeout; zero means no timeout.
-func NewHTTP(endpoint string, headers http.Header, timeout time.Duration) Exporter {
+// tlsCfg (may be nil) is set on the HTTP transport; nil uses system defaults.
+func NewHTTP(endpoint string, headers http.Header, timeout time.Duration, tlsCfg *tls.Config) Exporter {
+	transport := &http.Transport{TLSClientConfig: tlsCfg}
 	return &httpExporter{
 		endpoint: endpoint + "/v1/logs",
 		headers:  headers,
-		client:   &http.Client{Timeout: timeout},
+		client:   &http.Client{Timeout: timeout, Transport: transport},
 	}
 }
 
@@ -140,13 +144,15 @@ type grpcExporter struct {
 	timeout time.Duration
 }
 
-// NewGRPC returns an Exporter that sends via plogotlp.GRPCClient over an
-// insecure gRPC channel. TLS/credentials configuration is not yet exposed.
+// NewGRPC returns an Exporter that sends via plogotlp.GRPCClient.
 // timeout is applied per Export call via context.WithTimeout; zero means no timeout.
-func NewGRPC(endpoint string, timeout time.Duration) (Exporter, error) {
-	conn, err := grpc.NewClient(endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+// tlsCfg (may be nil) selects transport credentials: nil → insecure, non-nil → TLS.
+func NewGRPC(endpoint string, timeout time.Duration, tlsCfg *tls.Config) (Exporter, error) {
+	creds := insecure.NewCredentials()
+	if tlsCfg != nil {
+		creds = credentials.NewTLS(tlsCfg)
+	}
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("grpc dial: %w", err)
 	}

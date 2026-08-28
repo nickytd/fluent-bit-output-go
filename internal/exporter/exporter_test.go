@@ -87,7 +87,7 @@ func TestHTTPExporterSendsHeaders(t *testing.T) {
 		t.Fatalf("ParseHeaders: %v", err)
 	}
 
-	exp := NewHTTP(srv.URL, headers, 0)
+	exp := NewHTTP(srv.URL, headers, 0, nil)
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -111,7 +111,7 @@ func TestHTTPExporterNoHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, nil, 0)
+	exp := NewHTTP(srv.URL, nil, 0, nil)
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -159,7 +159,7 @@ func TestHTTPExporterTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, nil, 50*time.Millisecond)
+	exp := NewHTTP(srv.URL, nil, 50*time.Millisecond, nil)
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	start := time.Now()
@@ -171,5 +171,20 @@ func TestHTTPExporterTimeout(t *testing.T) {
 	}
 	if elapsed > 300*time.Millisecond {
 		t.Errorf("Export took %v, expected it to time out well under 300ms", elapsed)
+	}
+}
+
+func TestHTTPExporterTLS(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	exp := NewHTTP(srv.URL, nil, 0, srv.Client().Transport.(*http.Transport).TLSClientConfig)
+	defer func() { _ = exp.Shutdown(context.Background()) }()
+
+	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
+		t.Fatalf("Export over TLS: %v", err)
 	}
 }
