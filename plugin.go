@@ -139,7 +139,11 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		return output.FLB_ERROR
 	}
 
-	timeout, err := exporter.ParseTimeout(output.FLBPluginConfigKey(plugin, "timeout"))
+	timeoutRaw := output.FLBPluginConfigKey(plugin, "timeout")
+	if timeoutRaw == "" {
+		timeoutRaw = "10s"
+	}
+	timeout, err := exporter.ParseTimeout(timeoutRaw)
 	if err != nil {
 		inst.logger.Error("invalid timeout", "err", err)
 		return output.FLB_ERROR
