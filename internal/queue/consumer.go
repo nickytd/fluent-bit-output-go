@@ -10,6 +10,8 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 
 	"github.com/nickytd/fluent-bit-output-go/internal/exporter"
 )
@@ -65,11 +67,23 @@ func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporte
 				if err := exp.Export(ctx, logs); err != nil {
 					logger.Error("consumer: export error, preserving payload for retry", "err", err)
 					exportFailed = true
+					if q.exportFail != nil {
+						q.exportFail.Add(ctx, 1, metric.WithAttributes(
+							attribute.String("instance", q.instanceID),
+							attribute.String("status", "failure"),
+						))
+					}
 					// Stop draining on the first failure: further keys are
 					// almost certainly going to hit the same error, and
 					// deleting later successes while leaving earlier failures
 					// would reorder retries.
 					return nil
+				}
+				if q.exportOK != nil {
+					q.exportOK.Add(ctx, 1, metric.WithAttributes(
+						attribute.String("instance", q.instanceID),
+						attribute.String("status", "success"),
+					))
 				}
 				keys = append(keys, key)
 			}

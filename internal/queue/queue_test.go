@@ -14,6 +14,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 func openTestDB(t *testing.T) *bolt.DB {
@@ -307,7 +308,7 @@ func TestNewAfterShutdownReopensDB(t *testing.T) {
 	dir := t.TempDir()
 	exp := &stubExporter{}
 
-	q, err := New(logger, dir, exp)
+	q, err := New(logger, dir, exp, noop.NewMeterProvider())
 	if err != nil {
 		t.Fatalf("first New: %v", err)
 	}
@@ -326,7 +327,7 @@ func TestNewAfterShutdownReopensDB(t *testing.T) {
 	q.Shutdown()
 
 	// Simulate FLBPluginInit on hot-reload — must re-open the DB.
-	q2, err := New(logger, dir, exp)
+	q2, err := New(logger, dir, exp, noop.NewMeterProvider())
 	if err != nil {
 		t.Fatalf("New after Shutdown: %v", err)
 	}
@@ -344,5 +345,57 @@ func TestNewAfterShutdownReopensDB(t *testing.T) {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestQueueDepth(t *testing.T) {
+	exp := &stubExporter{alwaysFail: true} // keep items in queue
+	q := newTestQueue(t, exp)
+
+	if d := q.Depth(); d != 0 {
+		t.Fatalf("expected depth 0 on empty queue, got %d", d)
+	}
+
+	marshaler := &plog.ProtoMarshaler{}
+	data, err := marshaler.MarshalLogs(newLogsWithBody("depth-test"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for range 3 {
+		if err := q.Enqueue(data); err != nil {
+			t.Fatalf("Enqueue: %v", err)
+		}
+	}
+
+	// Give the consumer one drain attempt so backoff kicks in and items stay.
+	time.Sleep(100 * time.Millisecond)
+
+	if d := q.Depth(); d != 3 {
+		t.Fatalf("expected depth 3, got %d", d)
+	}
+}
+
+func TestQueueDepthZeroAfterShutdown(t *testing.T) {
+	exp := &stubExporter{alwaysFail: true}
+	dir := t.TempDir()
+	q, err := New(quietLogger(), dir, exp, noop.NewMeterProvider())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	marshaler := &plog.ProtoMarshaler{}
+	data, err := marshaler.MarshalLogs(newLogsWithBody("shutdown-depth"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := q.Enqueue(data); err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	q.Shutdown()
+
+	// After Shutdown the DB is closed; Depth() must return 0, not panic.
+	if d := q.Depth(); d != 0 {
+		t.Fatalf("expected 0 after Shutdown, got %d", d)
 	}
 }
