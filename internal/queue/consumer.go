@@ -10,8 +10,6 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/collector/pdata/plog"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/nickytd/fluent-bit-output-go/internal/exporter"
 )
@@ -26,7 +24,9 @@ const (
 
 func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporter.Exporter) {
 	defer close(q.done)
-	defer func() { _ = exp.Shutdown(ctx) }()
+	// Use context.Background() for shutdown: ctx is already cancelled when this
+	// defer fires, so passing it would cause the exporter to abort immediately.
+	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	unmarshaler := &plog.ProtoUnmarshaler{}
 	backoff := exportBackoffInitial
@@ -67,11 +67,8 @@ func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporte
 				if err := exp.Export(ctx, logs); err != nil {
 					logger.Error("consumer: export error, preserving payload for retry", "err", err)
 					exportFailed = true
-					if q.exportFail != nil {
-						q.exportFail.Add(ctx, 1, metric.WithAttributes(
-							attribute.String("instance", q.instanceID),
-							attribute.String("status", "failure"),
-						))
+					if q.exports != nil {
+						q.exports.Add(ctx, 1, q.attrFailure)
 					}
 					// Stop draining on the first failure: further keys are
 					// almost certainly going to hit the same error, and
@@ -79,11 +76,8 @@ func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporte
 					// would reorder retries.
 					return nil
 				}
-				if q.exportOK != nil {
-					q.exportOK.Add(ctx, 1, metric.WithAttributes(
-						attribute.String("instance", q.instanceID),
-						attribute.String("status", "success"),
-					))
+				if q.exports != nil {
+					q.exports.Add(ctx, 1, q.attrSuccess)
 				}
 				keys = append(keys, key)
 			}

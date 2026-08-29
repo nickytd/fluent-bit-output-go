@@ -20,6 +20,8 @@ import (
 
 	"github.com/fluent/fluent-bit-go/output"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 
 	"github.com/nickytd/fluent-bit-output-go/internal/convert"
 	"github.com/nickytd/fluent-bit-output-go/internal/exporter"
@@ -137,6 +139,12 @@ func FLBPluginRegister(def unsafe.Pointer) int {
 	if addr == "" {
 		addr = ":2021"
 	}
+	// Stop any existing server before replacing it (hot-reload path).
+	if telemetrySrv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		telemetrySrv.Stop(ctx)
+	}
 	telemetrySrv = telemetry.New(addr, logger)
 	if err := telemetrySrv.Start(); err != nil {
 		// Start only returns non-nil for unexpected errors; bind failures are
@@ -194,7 +202,12 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		return output.FLB_ERROR
 	}
 
-	mp := telemetrySrv.MeterProvider()
+	// telemetrySrv is always non-nil here: FLBPluginRegister initialises it
+	// before Fluent Bit calls FLBPluginInit. The nil guard is defensive.
+	var mp metric.MeterProvider = noop.NewMeterProvider()
+	if telemetrySrv != nil {
+		mp = telemetrySrv.MeterProvider()
+	}
 
 	var exp exporter.Exporter
 	switch {
@@ -215,9 +228,11 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		exp = exporter.NewStdout()
 	}
 
-	q, err := queue.New(inst.logger, queueDir, exp, mp)
+	q, err := queue.NewWithID(inst.logger, queueDir, id, exp, mp)
 	if err != nil {
 		inst.logger.Error("failed to init queue", "err", err)
+		// Shut down the exporter so its connections and goroutines are not leaked.
+		_ = exp.Shutdown(context.Background())
 		return output.FLB_ERROR
 	}
 	inst.queue = q
