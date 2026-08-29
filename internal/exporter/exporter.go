@@ -20,9 +20,11 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
+	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	grpcotel "google.golang.org/grpc/stats/opentelemetry"
 )
 
 // Exporter is the sink for marshalled log batches drained from the queue.
@@ -66,12 +68,16 @@ type httpExporter struct {
 // headers (may be nil) are attached to every request after Content-Type.
 // timeout is applied as http.Client.Timeout; zero means no timeout.
 // tlsCfg (may be nil) is set on the HTTP transport; nil uses system defaults.
-func NewHTTP(endpoint string, headers http.Header, timeout time.Duration, tlsCfg *tls.Config) Exporter {
+// mp is used to create request/byte/duration instruments; pass a noop provider to disable.
+func NewHTTP(endpoint string, headers http.Header, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider) Exporter {
 	transport := &http.Transport{TLSClientConfig: tlsCfg}
 	return &httpExporter{
 		endpoint: endpoint + "/v1/logs",
 		headers:  headers,
-		client:   &http.Client{Timeout: timeout, Transport: transport},
+		client: &http.Client{
+			Timeout:   timeout,
+			Transport: newMetricsRoundTripper(transport, mp),
+		},
 	}
 }
 
@@ -149,12 +155,18 @@ type grpcExporter struct {
 // NewGRPC returns an Exporter that sends via plogotlp.GRPCClient.
 // timeout is applied per Export call via context.WithTimeout; zero means no timeout.
 // tlsCfg (may be nil) selects transport credentials: nil → insecure, non-nil → TLS.
-func NewGRPC(endpoint string, timeout time.Duration, tlsCfg *tls.Config) (Exporter, error) {
+// mp is used to register gRPC client metrics via stats/opentelemetry; pass a noop provider to disable.
+func NewGRPC(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider) (Exporter, error) {
 	creds := insecure.NewCredentials()
 	if tlsCfg != nil {
 		creds = credentials.NewTLS(tlsCfg)
 	}
-	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
+	otelOpt := grpcotel.DialOption(grpcotel.Options{
+		MetricsOptions: grpcotel.MetricsOptions{
+			MeterProvider: mp,
+		},
+	})
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds), otelOpt)
 	if err != nil {
 		return nil, fmt.Errorf("grpc dial: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 func TestParseHeaders_empty(t *testing.T) {
@@ -111,7 +112,7 @@ func TestHTTPExporterSendsHeaders(t *testing.T) {
 		t.Fatalf("ParseHeaders: %v", err)
 	}
 
-	exp := NewHTTP(srv.URL, headers, 0, nil)
+	exp := NewHTTP(srv.URL, headers, 0, nil, noop.NewMeterProvider())
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -135,7 +136,7 @@ func TestHTTPExporterNoHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, nil, 0, nil)
+	exp := NewHTTP(srv.URL, nil, 0, nil, noop.NewMeterProvider())
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -183,7 +184,7 @@ func TestHTTPExporterTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, nil, 50*time.Millisecond, nil)
+	exp := NewHTTP(srv.URL, nil, 50*time.Millisecond, nil, noop.NewMeterProvider())
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	start := time.Now()
@@ -205,7 +206,7 @@ func TestHTTPExporterTLS(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, nil, 0, srv.Client().Transport.(*http.Transport).TLSClientConfig)
+	exp := NewHTTP(srv.URL, nil, 0, srv.Client().Transport.(*http.Transport).TLSClientConfig, noop.NewMeterProvider())
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
