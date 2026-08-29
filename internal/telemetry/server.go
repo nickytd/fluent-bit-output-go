@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
@@ -49,6 +50,8 @@ func New(addr string, logger *slog.Logger) *Server {
 	// Private registry — never use prometheus.DefaultRegisterer so the plugin
 	// does not pollute or conflict with the host process's global registry.
 	registry := prometheus.NewRegistry()
+	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	registry.MustRegister(collectors.NewGoCollector())
 
 	// The Prometheus exporter implements sdkmetric.Reader as a pull-based
 	// reader. When promhttp.HandlerFor triggers a scrape it collects from all
