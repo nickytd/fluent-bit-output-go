@@ -10,9 +10,12 @@ package main
 
 import (
 	"C"
+	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/fluent/fluent-bit-go/output"
@@ -22,6 +25,7 @@ import (
 	"github.com/nickytd/fluent-bit-output-go/internal/exporter"
 	"github.com/nickytd/fluent-bit-output-go/internal/flblog"
 	"github.com/nickytd/fluent-bit-output-go/internal/queue"
+	"github.com/nickytd/fluent-bit-output-go/internal/telemetry"
 )
 
 const pluginName = "go-out"
@@ -31,6 +35,10 @@ const pluginName = "go-out"
 var baseHandler = flblog.NewStderrHandler(pluginName)
 
 var instanceCount int
+
+// telemetrySrv is the shared observability HTTP server started once in
+// FLBPluginRegister and stopped in FLBPluginUnregister.
+var telemetrySrv *telemetry.Server
 
 type pluginInstance struct {
 	id                 string
@@ -122,7 +130,20 @@ var pluginConfigMap = []output.ConfigMap{
 //export FLBPluginRegister
 func FLBPluginRegister(def unsafe.Pointer) int {
 	v, c := buildInfo()
-	slog.New(baseHandler).Info("loading plugin", "version", v, "commit", c)
+	logger := slog.New(baseHandler)
+	logger.Info("loading plugin", "version", v, "commit", c)
+
+	addr := os.Getenv("FLB_GO_OUT_DEBUG_ADDR")
+	if addr == "" {
+		addr = ":2021"
+	}
+	telemetrySrv = telemetry.New(addr, logger)
+	if err := telemetrySrv.Start(); err != nil {
+		// Start only returns non-nil for unexpected errors; bind failures are
+		// swallowed and logged inside Start itself. Continue without telemetry.
+		logger.Warn("telemetry server start error", "err", err)
+	}
+
 	return output.FLBPluginRegisterWithConfigMap(def, pluginName, "Go OTLP output plugin", pluginConfigMap)
 }
 
@@ -173,10 +194,12 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 		return output.FLB_ERROR
 	}
 
+	mp := telemetrySrv.MeterProvider()
+
 	var exp exporter.Exporter
 	switch {
 	case otlpGRPC != "":
-		exp, err = exporter.NewGRPC(otlpGRPC, timeout, tlsCfg)
+		exp, err = exporter.NewGRPC(otlpGRPC, timeout, tlsCfg, mp)
 		if err != nil {
 			inst.logger.Error("failed to create grpc exporter", "err", err)
 			return output.FLB_ERROR
@@ -187,12 +210,12 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			inst.logger.Error("invalid otlp_http_headers", "err", err)
 			return output.FLB_ERROR
 		}
-		exp = exporter.NewHTTP(otlpHTTP, headers, timeout, tlsCfg)
+		exp = exporter.NewHTTP(otlpHTTP, headers, timeout, tlsCfg, mp)
 	default:
 		exp = exporter.NewStdout()
 	}
 
-	q, err := queue.New(inst.logger, queueDir, exp)
+	q, err := queue.New(inst.logger, queueDir, exp, mp)
 	if err != nil {
 		inst.logger.Error("failed to init queue", "err", err)
 		return output.FLB_ERROR
@@ -250,6 +273,11 @@ func FLBPluginExitCtx(ctx unsafe.Pointer) int {
 //export FLBPluginUnregister
 func FLBPluginUnregister(def unsafe.Pointer) {
 	slog.New(baseHandler).Info("unregistering plugin")
+	if telemetrySrv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		telemetrySrv.Stop(ctx)
+	}
 	output.FLBPluginUnregister(def)
 }
 

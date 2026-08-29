@@ -15,6 +15,7 @@ import (
 
 	bolt "go.etcd.io/bbolt"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 // stubExporter counts Export calls and can be programmed to fail the first
@@ -81,7 +82,7 @@ func quietLogger() *slog.Logger {
 // newTestQueue creates a Queue backed by a temp dir and registers cleanup.
 func newTestQueue(t *testing.T, exp *stubExporter) *Queue {
 	t.Helper()
-	q, err := New(quietLogger(), t.TempDir(), exp)
+	q, err := New(quietLogger(), t.TempDir(), exp, noop.NewMeterProvider())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestConsumerBackoffCappedAndInterruptible(t *testing.T) {
 	exp := &stubExporter{alwaysFail: true}
 	// Build the Queue manually so we can time the Shutdown call ourselves.
 	dir := t.TempDir()
-	q, err := New(quietLogger(), dir, exp)
+	q, err := New(quietLogger(), dir, exp, noop.NewMeterProvider())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
