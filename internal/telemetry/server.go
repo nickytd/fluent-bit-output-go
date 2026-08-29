@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -30,16 +31,20 @@ import (
 // Server is the shared observability HTTP endpoint. One instance is created at
 // plugin load time in FLBPluginRegister and stopped in FLBPluginUnregister.
 type Server struct {
-	mp   *sdkmetric.MeterProvider
-	srv  *http.Server
-	addr string // actual bound address (host:port); empty when disabled
-	done chan struct{}
+	mp     *sdkmetric.MeterProvider
+	srv    *http.Server
+	addr   string // actual bound address (host:port); empty when disabled
+	done   chan struct{}
+	logger *slog.Logger
 }
 
 // New creates a Server that will listen on addr. Call Start to bind and serve.
 // addr is typically read from the FLB_GO_OUT_DEBUG_ADDR env var by the caller.
 func New(addr string, logger *slog.Logger) *Server {
-	s := &Server{done: make(chan struct{})}
+	s := &Server{
+		done:   make(chan struct{}),
+		logger: logger,
+	}
 
 	// Private registry — never use prometheus.DefaultRegisterer so the plugin
 	// does not pollute or conflict with the host process's global registry.
@@ -77,9 +82,8 @@ func New(addr string, logger *slog.Logger) *Server {
 	s.srv = &http.Server{
 		Addr:    addr,
 		Handler: mux,
-		// gosec G112: protect against slow-loris header attacks.
-		// 30s is intentionally generous to allow long pprof profile collections.
-		ReadHeaderTimeout: 30e9, // 30 * time.Second
+		// gosec G112: 30s is intentionally generous to allow long pprof profile collections.
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	return s
 }
@@ -96,7 +100,7 @@ func (s *Server) Start() error {
 
 	ln, err := net.Listen("tcp", s.srv.Addr)
 	if err != nil {
-		slog.Default().Warn("telemetry: bind failed, observability disabled", "addr", s.srv.Addr, "err", err)
+		s.logger.Warn("telemetry: bind failed, observability disabled", "addr", s.srv.Addr, "err", err)
 		// Discard the server so MeterProvider returns noop.
 		s.srv = nil
 		if s.mp != nil {
@@ -116,10 +120,13 @@ func (s *Server) Start() error {
 }
 
 // Stop gracefully shuts down the HTTP server and flushes the OTel SDK.
+// Safe to call even if Start was never called.
 func (s *Server) Stop(ctx context.Context) {
 	if s.srv != nil {
 		_ = s.srv.Shutdown(ctx)
 	}
+	// done is always closed: either by Start's goroutine, by the bind-failure
+	// path, or by the New-failure path — so this never deadlocks.
 	<-s.done
 	if s.mp != nil {
 		_ = s.mp.Shutdown(ctx)

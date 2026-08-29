@@ -56,14 +56,18 @@ func (rt *metricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, err
 
 	resp, err := rt.inner.RoundTrip(req)
 
+	// Use context.Background() for all post-RoundTrip recording: req.Context()
+	// may be cancelled by the time RoundTrip returns (e.g. on timeout), which
+	// would cause the OTel SDK to silently drop the observation.
+	ctx := context.Background()
 	elapsed := time.Since(start).Seconds()
-	rt.duration.Record(req.Context(), elapsed)
+	rt.duration.Record(ctx, elapsed)
 
 	status := "success"
 	if err != nil || (resp != nil && resp.StatusCode != http.StatusOK) {
 		status = "failure"
 	}
-	rt.requests.Add(context.Background(), 1, metric.WithAttributes(
+	rt.requests.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("status", status),
 	))
 	return resp, err
