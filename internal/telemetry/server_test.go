@@ -111,6 +111,23 @@ func TestMetricsCounterVisible(t *testing.T) {
 	}
 }
 
+func TestGoProcessMetricsExposed(t *testing.T) {
+	srv := startServer(t, ":0")
+
+	resp, err := http.Get("http://" + srv.Addr() + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	for _, want := range []string{"go_goroutines", "go_memstats_alloc_bytes", "process_cpu_seconds_total"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("expected %q in /metrics body", want)
+		}
+	}
+}
+
 func TestMeterProviderNoopOnDisabled(t *testing.T) {
 	// A server that never had Start called has nil mp — MeterProvider returns noop.
 	srv := &Server{done: make(chan struct{})}
