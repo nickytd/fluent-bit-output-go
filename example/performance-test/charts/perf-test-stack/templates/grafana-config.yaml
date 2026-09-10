@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.prometheus.port }}
+        isDefault: true
+        jsonData:
+          timeInterval: {{ .Values.prometheus.scrapeInterval }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: perf-test
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: grafana
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+data:
+  fluent-bit.json: |
+{{ .Files.Get "dashboards/fluent-bit.json" | indent 4 }}
+  otel-collector.json: |
+{{ .Files.Get "dashboards/otel-collector.json" | indent 4 }}
+  victorialogs.json: |
+{{ .Files.Get "dashboards/victorialogs.json" | indent 4 }}
+  fluent-bit-plugin.json: |
+{{ .Files.Get "dashboards/fluent-bit-plugin.json" | indent 4 }}

@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: prometheus
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+data:
+  prometheus.yaml: |
+    global:
+      scrape_interval: {{ .Values.prometheus.scrapeInterval }}
+      evaluation_interval: {{ .Values.prometheus.scrapeInterval }}
+
+    scrape_configs:
+      - job_name: fluent-bit-core
+        metrics_path: /api/v1/metrics/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Release.Namespace }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: fluent-bit
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: "$1:{{ .Values.fluentbit.metricsPort }}"
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: instance
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+
+      - job_name: go-out-plugin
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Release.Namespace }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: fluent-bit
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: "$1:{{ .Values.fluentbit.telemetryPort }}"
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: instance
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+
+      - job_name: otel-collector
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Release.Namespace }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: otel-collector
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: "$1:{{ .Values.otelCollector.metricsPort }}"
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: instance
+
+      - job_name: victorialogs
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [{{ .Release.Namespace }}]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            action: keep
+            regex: victorialogs
+          - source_labels: [__meta_kubernetes_pod_ip]
+            target_label: __address__
+            replacement: "$1:{{ .Values.victorialogs.port }}"
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: instance
+
+      - job_name: prometheus
+        static_configs:
+          - targets: ["localhost:{{ .Values.prometheus.port }}"]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prometheus
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: prometheus
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  serviceName: prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+        {{- include "fluent-bit-plugin.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.prometheus.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.prometheus.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: prometheus
+      securityContext:
+        runAsUser: 65534
+        runAsNonRoot: true
+        fsGroup: 65534
+      containers:
+        - name: prometheus
+          image: {{ .Values.prometheus.image }}:{{ .Values.prometheus.tag }}
+          imagePullPolicy: {{ .Values.prometheus.imagePullPolicy }}
+          args:
+            - --config.file=/etc/prometheus/prometheus.yaml
+            - --storage.tsdb.path=/prometheus
+            - --web.listen-address=:{{ .Values.prometheus.port }}
+            - --storage.tsdb.retention.time=7d
+            - --storage.tsdb.retention.size={{ .Values.prometheus.retentionSize }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.prometheus.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: {{ .Values.prometheus.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: storage
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        labels:
+          app.kubernetes.io/name: prometheus
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.prometheus.storageClass }}
+        storageClassName: {{ .Values.prometheus.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.prometheus.storageSize }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: prometheus
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - name: http
+      port: {{ .Values.prometheus.port }}
+      targetPort: {{ .Values.prometheus.port }}

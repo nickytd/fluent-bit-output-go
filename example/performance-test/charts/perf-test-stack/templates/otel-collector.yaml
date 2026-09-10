@@ -1,0 +1,164 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: otel-collector
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+      file_storage/queue:
+        directory: {{ .Values.otelCollector.storageDir }}
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:{{ .Values.otelCollector.grpcPort }}
+          http:
+            endpoint: 0.0.0.0:{{ .Values.otelCollector.httpPort }}
+
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 80
+        spike_limit_percentage: 15
+      batch:
+        send_batch_size: 10000
+        timeout: 5s
+
+    exporters:
+      otlp_http/victorialogs:
+        logs_endpoint: {{ printf "http://victorialogs-http.%s.svc.cluster.local:9428/insert/opentelemetry/v1/logs" .Release.Namespace | quote }}
+        headers:
+          VL-Stream-Fields: {{ .Values.otelCollector.vlStreamFields | quote }}
+          VL-Msg-Field: {{ .Values.otelCollector.vlMsgField | quote }}
+        sending_queue:
+          storage: file_storage/queue
+          queue_size: 10000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 1s
+          max_interval: 60s
+          max_elapsed_time: 300s
+
+    service:
+      extensions: [health_check, file_storage/queue]
+      pipelines:
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp_http/victorialogs]
+      telemetry:
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: {{ .Values.otelCollector.metricsPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: otel-collector
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.otelCollector.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+        {{- include "fluent-bit-plugin.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.otelCollector.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.otelCollector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: otel-collector
+          image: {{ .Values.otelCollector.image }}:{{ .Values.otelCollector.tag }}
+          imagePullPolicy: {{ .Values.otelCollector.imagePullPolicy }}
+          args:
+            - --config=/etc/otelcol/config.yaml
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.otelCollector.grpcPort }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.otelCollector.httpPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.otelCollector.metricsPort }}
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 13133
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+            - name: storage
+              mountPath: {{ .Values.otelCollector.storageDir }}
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: otel-collector
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: otel-collector
+  ports:
+    - name: grpc
+      port: {{ .Values.otelCollector.grpcPort }}
+      targetPort: {{ .Values.otelCollector.grpcPort }}
+      protocol: TCP
+    - name: http
+      port: {{ .Values.otelCollector.httpPort }}
+      targetPort: {{ .Values.otelCollector.httpPort }}
+      protocol: TCP
+    - name: metrics
+      port: {{ .Values.otelCollector.metricsPort }}
+      targetPort: {{ .Values.otelCollector.metricsPort }}
+      protocol: TCP
