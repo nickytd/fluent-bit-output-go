@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluent-bit
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluent-bit-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: fluent-bit
+  ports:
+    - name: fluentbit-core
+      port: {{ .Values.fluentbit.metricsPort }}
+      targetPort: {{ .Values.fluentbit.metricsPort }}
+      protocol: TCP
+    - name: go-out-plugin
+      port: {{ .Values.fluentbit.telemetryPort }}
+      targetPort: {{ .Values.fluentbit.telemetryPort }}
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fluent-bit
+        {{- include "fluent-bit-plugin.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: fluent-bit
+      initContainers:
+        - name: install-plugin
+          image: {{ .Values.plugin.image }}:{{ .Values.plugin.tag }}
+          imagePullPolicy: {{ .Values.plugin.imagePullPolicy }}
+          volumeMounts:
+            - name: plugin
+              mountPath: /output
+      containers:
+        - name: fluent-bit
+          image: {{ .Values.fluentbit.image }}:{{ .Values.fluentbit.tag }}
+          imagePullPolicy: {{ .Values.fluentbit.imagePullPolicy }}
+          args:
+            - -c
+            - /fluent-bit/etc/fluent-bit.yaml
+            - -e
+            - /fluent-bit/plugins/go-out.so
+          env:
+            - name: FLB_GO_OUT_DEBUG_ADDR
+              value: ":{{ .Values.fluentbit.telemetryPort }}"
+          ports:
+            - name: http
+              containerPort: {{ .Values.fluentbit.metricsPort }}
+              protocol: TCP
+            - name: telemetry
+              containerPort: {{ .Values.fluentbit.telemetryPort }}
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.fluentbit.metricsPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.fluentbit.metricsPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: plugin
+              mountPath: /fluent-bit/plugins
+              readOnly: true
+            - name: config
+              mountPath: /fluent-bit/etc
+              readOnly: true
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: queue
+              mountPath: {{ .Values.fluentbit.queueDir }}
+            - name: chunks
+              mountPath: {{ .Values.fluentbit.storageChunksPath }}
+      tolerations:
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      volumes:
+        - name: plugin
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: fluent-bit-config
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: queue
+          hostPath:
+            path: {{ .Values.fluentbit.queueDir }}
+            type: DirectoryOrCreate
+        - name: chunks
+          hostPath:
+            path: {{ .Values.fluentbit.storageChunksPath }}
+            type: DirectoryOrCreate

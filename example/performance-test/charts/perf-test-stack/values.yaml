@@ -1,0 +1,60 @@
+plugin:
+  image: ghcr.io/nickytd/fluent-bit-output-go
+  tag: v0.8.1
+  imagePullPolicy: IfNotPresent
+
+fluentbit:
+  image: fluent/fluent-bit
+  tag: 5.1.2
+  imagePullPolicy: IfNotPresent
+  flush: 1
+  metricsPort: 2020
+  telemetryPort: 2021
+  storageChunksPath: /var/run/fluentbit/chunks
+  queueDir: /var/run/fluentbit/bbolt
+  resourceAttributes: "k8s_namespace_name,k8s_pod_name,k8s_container_name,k8s_host"
+
+otelCollector:
+  image: otel/opentelemetry-collector-contrib
+  tag: "0.160.0"
+  imagePullPolicy: IfNotPresent
+  replicas: 2
+  grpcPort: 4317
+  httpPort: 4318
+  metricsPort: 8888
+  storageDir: /var/lib/otelcol/storage
+  vlStreamFields: "k8s_namespace_name,k8s_pod_name,k8s_container_name,k8s_host"
+  vlMsgField: "M"
+  nodeSelector: {}
+  tolerations: []
+
+victorialogs:
+  image: victoriametrics/victoria-logs
+  tag: v1.52.0
+  imagePullPolicy: IfNotPresent
+  port: 9428
+  storageSize: 100Gi
+  storageClass: ""
+  nodeSelector: {}
+  tolerations: []
+
+prometheus:
+  image: prom/prometheus
+  tag: v3.14.0
+  imagePullPolicy: IfNotPresent
+  port: 9090
+  storageSize: 20Gi
+  retentionSize: 18GB
+  storageClass: ""
+  scrapeInterval: 15s
+  nodeSelector: {}
+  tolerations: []
+
+grafana:
+  image: grafana/grafana
+  tag: "13.2.1"
+  imagePullPolicy: IfNotPresent
+  port: 3000
+  adminPassword: admin
+
+loggerImage: "nickytd/log-generator:v0.1.10"

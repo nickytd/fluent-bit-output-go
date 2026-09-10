@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+data:
+  fluent-bit.yaml: |
+    service:
+      flush: {{ .Values.fluentbit.flush }}
+      daemon: false
+      log_level: info
+      http_server: true
+      http_listen: 0.0.0.0
+      http_port: 2020
+      storage.path: {{ .Values.fluentbit.storageChunksPath }}
+      storage.sync: normal
+      storage.checksum: false
+      storage.max_chunks_up: 128
+
+    pipeline:
+      inputs:
+        - name: tail
+          tag: kubernetes.*
+          path: /var/log/containers/*.log
+          multiline.parser: docker, cri
+          db: {{ .Values.fluentbit.storageChunksPath }}/tail.db
+          storage.type: filesystem
+          skip_long_lines: true
+          refresh_interval: 10
+          rotate_wait: 30
+
+      filters:
+        - name: kubernetes
+          match: "kubernetes.*"
+          kube_tag_prefix: kubernetes.var.log.containers.
+          merge_log: true
+          keep_log: false
+          k8s-logging.parser: true
+          k8s-logging.exclude: true
+          labels: false
+          annotations: false
+        - name: nest
+          match: "kubernetes.*"
+          operation: lift
+          nested_under: kubernetes
+          add_prefix: k8s_
+
+      outputs:
+        - name: go-out
+          match: "*"
+          queue_dir: {{ .Values.fluentbit.queueDir }}
+          otlp_grpc: {{ printf "otel-collector.%s.svc.cluster.local:4317" .Release.Namespace | quote }}
+          resource_attributes: {{ .Values.fluentbit.resourceAttributes }}

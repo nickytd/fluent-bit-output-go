@@ -1,0 +1,6 @@
+apiVersion: v2
+name: perf-test-stack
+description: Performance test stack for the go-out Fluent Bit OTLP output plugin
+type: application
+version: 0.0.1
+appVersion: "v0.8.1"

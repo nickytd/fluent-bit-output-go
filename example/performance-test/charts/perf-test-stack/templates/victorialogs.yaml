@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: victorialogs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: victorialogs
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: victorialogs
+  serviceName: victorialogs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: victorialogs
+        {{- include "fluent-bit-plugin.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.victorialogs.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.victorialogs.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: victorialogs
+          image: {{ .Values.victorialogs.image }}:{{ .Values.victorialogs.tag }}
+          imagePullPolicy: {{ .Values.victorialogs.imagePullPolicy }}
+          args:
+            - --storageDataPath=/storage
+            - --httpListenAddr=:{{ .Values.victorialogs.port }}
+            - --retentionPeriod=7d
+            - --loggerFormat=json
+            - --http.shutdownDelay=15s
+          ports:
+            - name: http
+              containerPort: {{ .Values.victorialogs.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.victorialogs.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.victorialogs.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              memory: 4Gi
+          volumeMounts:
+            - name: storage
+              mountPath: /storage
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+        labels:
+          app.kubernetes.io/name: victorialogs
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.victorialogs.storageClass }}
+        storageClassName: {{ .Values.victorialogs.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.victorialogs.storageSize }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victorialogs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: victorialogs
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: victorialogs
+  ports:
+    - name: http
+      port: {{ .Values.victorialogs.port }}
+      targetPort: {{ .Values.victorialogs.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victorialogs-http
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: victorialogs
+    {{- include "fluent-bit-plugin.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: victorialogs
+  ports:
+    - name: http
+      port: {{ .Values.victorialogs.port }}
+      targetPort: {{ .Values.victorialogs.port }}
