@@ -18,7 +18,8 @@ data:
       storage.path: {{ .Values.fluentbit.storageChunksPath }}
       storage.sync: normal
       storage.checksum: false
-      storage.max_chunks_up: 128
+      storage.max_chunks_up: {{ .Values.fluentbit.storageMaxChunksUp }}
+      storage.total_limit_size: {{ .Values.fluentbit.storageTotalLimitSize }}
 
     pipeline:
       inputs:

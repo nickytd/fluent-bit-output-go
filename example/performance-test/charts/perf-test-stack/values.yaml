@@ -11,6 +11,8 @@ fluentbit:
   metricsPort: 2020
   telemetryPort: 2021
   storageChunksPath: /var/run/fluentbit/chunks
+  storageTotalLimitSize: 2G
+  storageMaxChunksUp: 4096
   queueDir: /var/run/fluentbit/bbolt
   resourceAttributes: "k8s_namespace_name,k8s_pod_name,k8s_container_name,k8s_host"
   nodeSelector: {}
@@ -21,10 +23,10 @@ fluentbit:
       effect: NoExecute
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
+      cpu: 200m
       memory: 256Mi
+    limits:
+      memory: 512Mi
 
 otelCollector:
   image: otel/opentelemetry-collector-contrib
