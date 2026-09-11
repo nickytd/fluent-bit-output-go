@@ -78,6 +78,8 @@ spec:
               mountPath: /var/lib/grafana
             - name: logs
               mountPath: /var/log/grafana
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: provisioning-datasources
           configMap:
@@ -91,6 +93,8 @@ spec:
         - name: data
           emptyDir: {}
         - name: logs
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}
 ---
 apiVersion: v1
