@@ -26,15 +26,21 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.grafana.securityContext | nindent 8 }}
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: grafana
           image: {{ .Values.grafana.image }}:{{ .Values.grafana.tag }}
           imagePullPolicy: {{ .Values.grafana.imagePullPolicy }}
-          {{- with .Values.grafana.containerSecurityContext }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: GF_AUTH_ANONYMOUS_ENABLED
               value: "true"

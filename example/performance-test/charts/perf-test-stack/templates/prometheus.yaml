@@ -112,15 +112,21 @@ spec:
       {{- end }}
       serviceAccountName: prometheus
       securityContext:
-        {{- toYaml .Values.prometheus.securityContext | nindent 8 }}
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: prometheus
           image: {{ .Values.prometheus.image }}:{{ .Values.prometheus.tag }}
           imagePullPolicy: {{ .Values.prometheus.imagePullPolicy }}
-          {{- with .Values.prometheus.containerSecurityContext }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           args:
             - --config.file=/etc/prometheus/prometheus.yaml
             - --storage.tsdb.path=/prometheus

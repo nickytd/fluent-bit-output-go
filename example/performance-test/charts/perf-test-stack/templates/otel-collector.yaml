@@ -93,18 +93,22 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.otelCollector.securityContext }}
       securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: otel-collector
           image: {{ .Values.otelCollector.image }}:{{ .Values.otelCollector.tag }}
           imagePullPolicy: {{ .Values.otelCollector.imagePullPolicy }}
-          {{- with .Values.otelCollector.containerSecurityContext }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           args:
             - --config=/etc/otelcol/config.yaml
           ports:

@@ -19,11 +19,6 @@ fluentbit:
       effect: NoSchedule
     - operator: Exists
       effect: NoExecute
-  securityContext: {}
-  containerSecurityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
   resources:
     requests:
       cpu: 100m
@@ -53,18 +48,6 @@ otelCollector:
               matchLabels:
                 app.kubernetes.io/name: otel-collector
             topologyKey: kubernetes.io/hostname
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 10001
-    runAsGroup: 10001
-    fsGroup: 10001
-    seccompProfile:
-      type: RuntimeDefault
-  containerSecurityContext:
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
   resources:
     requests:
       cpu: 500m
@@ -81,18 +64,6 @@ victorialogs:
   storageClass: ""
   nodeSelector: {}
   tolerations: []
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000
-    seccompProfile:
-      type: RuntimeDefault
-  containerSecurityContext:
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
   resources:
     requests:
       cpu: 500m
@@ -111,18 +82,6 @@ prometheus:
   scrapeInterval: 15s
   nodeSelector: {}
   tolerations: []
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 65534
-    runAsGroup: 65534
-    fsGroup: 65534
-    seccompProfile:
-      type: RuntimeDefault
-  containerSecurityContext:
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
   resources:
     requests:
       cpu: 200m
@@ -138,18 +97,6 @@ grafana:
   adminPassword: admin
   nodeSelector: {}
   tolerations: []
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 472
-    runAsGroup: 472
-    fsGroup: 472
-    seccompProfile:
-      type: RuntimeDefault
-  containerSecurityContext:
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
   resources:
     requests:
       cpu: 100m
@@ -163,17 +110,6 @@ logGenerator:
   imagePullPolicy: IfNotPresent
   nodeSelector: {}
   tolerations: []
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 65534
-    runAsGroup: 65534
-    seccompProfile:
-      type: RuntimeDefault
-  containerSecurityContext:
-    readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop: ["ALL"]
   resources:
     requests:
       cpu: 100m
