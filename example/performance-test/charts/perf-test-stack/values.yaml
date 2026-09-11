@@ -103,16 +103,3 @@ grafana:
       memory: 256Mi
     limits:
       memory: 1Gi
-
-logGenerator:
-  image: nickytd/log-generator
-  tag: v0.1.10
-  imagePullPolicy: IfNotPresent
-  nodeSelector: {}
-  tolerations: []
-  resources:
-    requests:
-      cpu: 100m
-      memory: 64Mi
-    limits:
-      memory: 128Mi
