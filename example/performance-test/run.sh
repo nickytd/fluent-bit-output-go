@@ -2,10 +2,10 @@
 set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-perf-test}"
-NAMESPACES="${NAMESPACES:-20}"
-JOBS="${JOBS:-20}"
-LOGS="${LOGS:-50000}"
-LOGS_DELAY="${LOGS_DELAY:-10ms}"
+NAMESPACES="${NAMESPACES:-10}"
+JOBS="${JOBS:-15}"
+LOGS="${LOGS:-100000}"
+LOGS_DELAY="${LOGS_DELAY:-5ms}"
 LOGGER_IMAGE="${LOGGER_IMAGE:-nickytd/log-generator:v0.1.10}"
 NODE_SELECTOR="${NODE_SELECTOR:-}"
 
@@ -44,8 +44,7 @@ for i in $(seq 1 "${NAMESPACES}"); do
   ns="perf-ns-${i}"
   for j in $(seq 1 "${JOBS}"); do
     LOGGER_NAME="ns-${i}-job-${j}"
-    kubectl apply -f - &>/dev/null <<EOF &
-apiVersion: batch/v1
+    manifest="apiVersion: batch/v1
 kind: Job
 metadata:
   name: logger-${j}
@@ -80,8 +79,8 @@ ${node_selector_yaml}      topologySpreadConstraints:
             - --count=${LOGS}
             - --wait=${LOGS_DELAY}
             - --name=${LOGGER_NAME}
-            - --json
-EOF
+            - --json"
+    echo "${manifest}" | kubectl apply -f - &>/dev/null &
     pids+=($!)
   done
 done
