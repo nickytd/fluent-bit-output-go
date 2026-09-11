@@ -7,9 +7,22 @@ JOBS="${JOBS:-20}"
 LOGS="${LOGS:-50000}"
 LOGS_DELAY="${LOGS_DELAY:-10ms}"
 LOGGER_IMAGE="${LOGGER_IMAGE:-nickytd/log-generator:v0.1.10}"
+NODE_SELECTOR="${NODE_SELECTOR:-}"
 
 echo "Starting load test: ${NAMESPACES} namespaces x ${JOBS} jobs x ${LOGS} logs (delay: ${LOGS_DELAY})"
 echo "Logger image: ${LOGGER_IMAGE}"
+[[ -n "${NODE_SELECTOR}" ]] && echo "Node selector: ${NODE_SELECTOR}"
+
+# Build nodeSelector YAML block from KEY=VALUE pairs (comma-separated)
+node_selector_yaml=""
+if [[ -n "${NODE_SELECTOR}" ]]; then
+  node_selector_yaml="      nodeSelector:"$'\n'
+  IFS=',' read -ra pairs <<< "${NODE_SELECTOR}"
+  for pair in "${pairs[@]}"; do
+    key="${pair%%=*}"; val="${pair#*=}"
+    node_selector_yaml+="        ${key}: ${val}"$'\n'
+  done
+fi
 
 pids=()
 
@@ -53,7 +66,7 @@ spec:
         perf-test/job: logger-${j}
     spec:
       restartPolicy: Never
-      topologySpreadConstraints:
+${node_selector_yaml}      topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
