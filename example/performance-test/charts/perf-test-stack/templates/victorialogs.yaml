@@ -53,11 +53,7 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              memory: 4Gi
+            {{- toYaml .Values.victorialogs.resources | nindent 12 }}
           volumeMounts:
             - name: storage
               mountPath: /storage

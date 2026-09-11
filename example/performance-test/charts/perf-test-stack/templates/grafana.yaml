@@ -17,10 +17,16 @@ spec:
         app.kubernetes.io/name: grafana
         {{- include "fluent-bit-plugin.labels" . | nindent 8 }}
     spec:
+      {{- with .Values.grafana.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.grafana.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 472
-        fsGroup: 472
+        {{- toYaml .Values.grafana.securityContext | nindent 8 }}
       containers:
         - name: grafana
           image: {{ .Values.grafana.image }}:{{ .Values.grafana.tag }}
@@ -50,11 +56,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
           resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              memory: 1Gi
+            {{- toYaml .Values.grafana.resources | nindent 12 }}
           volumeMounts:
             - name: provisioning-datasources
               mountPath: /etc/grafana/provisioning/datasources

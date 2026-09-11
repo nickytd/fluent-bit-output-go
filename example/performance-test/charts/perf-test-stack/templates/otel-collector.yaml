@@ -89,6 +89,10 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.otelCollector.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: otel-collector
           image: {{ .Values.otelCollector.image }}:{{ .Values.otelCollector.tag }}
@@ -121,11 +125,7 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
-            requests:
-              cpu: 500m
-              memory: 512Mi
-            limits:
-              memory: 1Gi
+            {{- toYaml .Values.otelCollector.resources | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /etc/otelcol
