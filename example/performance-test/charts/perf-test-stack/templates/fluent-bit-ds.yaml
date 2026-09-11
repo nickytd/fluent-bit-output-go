@@ -55,10 +55,18 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.fluentbit.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
         - name: install-plugin
           image: {{ .Values.plugin.image }}:{{ .Values.plugin.tag }}
           imagePullPolicy: {{ .Values.plugin.imagePullPolicy }}
+          {{- with .Values.fluentbit.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: plugin
               mountPath: /output
@@ -66,6 +74,10 @@ spec:
         - name: fluent-bit
           image: {{ .Values.fluentbit.image }}:{{ .Values.fluentbit.tag }}
           imagePullPolicy: {{ .Values.fluentbit.imagePullPolicy }}
+          {{- with .Values.fluentbit.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           args:
             - -c
             - /fluent-bit/etc/fluent-bit.yaml
