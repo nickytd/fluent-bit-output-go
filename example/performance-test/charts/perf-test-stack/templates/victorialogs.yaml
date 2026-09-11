@@ -26,18 +26,22 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.victorialogs.securityContext }}
       securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: victorialogs
           image: {{ .Values.victorialogs.image }}:{{ .Values.victorialogs.tag }}
           imagePullPolicy: {{ .Values.victorialogs.imagePullPolicy }}
-          {{- with .Values.victorialogs.containerSecurityContext }}
           securityContext:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           args:
             - --storageDataPath=/storage
             - --httpListenAddr=:{{ .Values.victorialogs.port }}
