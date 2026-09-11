@@ -14,7 +14,7 @@ data:
 
     scrape_configs:
       - job_name: fluent-bit-core
-        metrics_path: /api/v1/metrics/prometheus
+        metrics_path: /api/v2/metrics/prometheus
         kubernetes_sd_configs:
           - role: pod
             namespaces:
