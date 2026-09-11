@@ -152,7 +152,7 @@ func FLBPluginRegister(def unsafe.Pointer) int {
 		logger.Warn("telemetry server start error", "err", err)
 	}
 
-	return output.FLBPluginRegisterWithConfigMap(def, pluginName, "Go OTLP output plugin", pluginConfigMap)
+	return output.FLBPluginRegisterWithEventTypeAndConfigMap(def, output.FLB_OUTPUT_LOGS, pluginName, "Go OTLP output plugin", pluginConfigMap)
 }
 
 //export FLBPluginInit
