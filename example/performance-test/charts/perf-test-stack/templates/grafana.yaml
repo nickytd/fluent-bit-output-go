@@ -31,6 +31,10 @@ spec:
         - name: grafana
           image: {{ .Values.grafana.image }}:{{ .Values.grafana.tag }}
           imagePullPolicy: {{ .Values.grafana.imagePullPolicy }}
+          {{- with .Values.grafana.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
             - name: GF_AUTH_ANONYMOUS_ENABLED
               value: "true"

@@ -117,6 +117,10 @@ spec:
         - name: prometheus
           image: {{ .Values.prometheus.image }}:{{ .Values.prometheus.tag }}
           imagePullPolicy: {{ .Values.prometheus.imagePullPolicy }}
+          {{- with .Values.prometheus.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           args:
             - --config.file=/etc/prometheus/prometheus.yaml
             - --storage.tsdb.path=/prometheus
