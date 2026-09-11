@@ -13,6 +13,18 @@ fluentbit:
   storageChunksPath: /var/run/fluentbit/chunks
   queueDir: /var/run/fluentbit/bbolt
   resourceAttributes: "k8s_namespace_name,k8s_pod_name,k8s_container_name,k8s_host"
+  nodeSelector: {}
+  tolerations:
+    - operator: Exists
+      effect: NoSchedule
+    - operator: Exists
+      effect: NoExecute
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
 
 otelCollector:
   image: otel/opentelemetry-collector-contrib
@@ -27,6 +39,21 @@ otelCollector:
   vlMsgField: "M"
   nodeSelector: {}
   tolerations: []
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: otel-collector
+            topologyKey: kubernetes.io/hostname
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
 
 victorialogs:
   image: victoriametrics/victoria-logs
@@ -37,6 +64,12 @@ victorialogs:
   storageClass: ""
   nodeSelector: {}
   tolerations: []
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 4Gi
 
 prometheus:
   image: prom/prometheus
@@ -49,6 +82,16 @@ prometheus:
   scrapeInterval: 15s
   nodeSelector: {}
   tolerations: []
+  securityContext:
+    runAsUser: 65534
+    runAsNonRoot: true
+    fsGroup: 65534
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
 
 grafana:
   image: grafana/grafana
@@ -56,5 +99,17 @@ grafana:
   imagePullPolicy: IfNotPresent
   port: 3000
   adminPassword: admin
+  nodeSelector: {}
+  tolerations: []
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    fsGroup: 472
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
 
 loggerImage: "nickytd/log-generator:v0.1.10"

@@ -47,6 +47,14 @@ spec:
         {{- include "fluent-bit-plugin.labels" . | nindent 8 }}
     spec:
       serviceAccountName: fluent-bit
+      {{- with .Values.fluentbit.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.fluentbit.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       initContainers:
         - name: install-plugin
           image: {{ .Values.plugin.image }}:{{ .Values.plugin.tag }}
@@ -74,11 +82,7 @@ spec:
               containerPort: {{ .Values.fluentbit.telemetryPort }}
               protocol: TCP
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              memory: 256Mi
+            {{- toYaml .Values.fluentbit.resources | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /
@@ -108,11 +112,6 @@ spec:
               mountPath: {{ .Values.fluentbit.queueDir }}
             - name: chunks
               mountPath: {{ .Values.fluentbit.storageChunksPath }}
-      tolerations:
-        - operator: Exists
-          effect: NoSchedule
-        - operator: Exists
-          effect: NoExecute
       volumes:
         - name: plugin
           emptyDir: {}
