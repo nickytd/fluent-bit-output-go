@@ -1,6 +1,6 @@
 plugin:
   image: ghcr.io/nickytd/fluent-bit-output-go
-  tag: v0.8.1
+  tag: v0.9.0
   imagePullPolicy: IfNotPresent
 
 fluentbit:

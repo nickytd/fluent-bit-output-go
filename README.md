@@ -88,7 +88,7 @@ pipeline:
       # queue_dir: /tmp/fluent-bit-bbolt
       # otlp_grpc: localhost:4317
       # otlp_http: http://localhost:4318
-      # otlp_http_headers: "Authorization=Bearer token;X-Tenant=acme"
+      # otlp_http_headers: "Authorization=Bearer token;X-Tenant=acme;VL-Stream-Fields=host.name,severity"
       # resource_attributes: "host.name,k8s.namespace.name,k8s.pod.name,k8s.container.name"
       # timeout: 10s
       # tls_ca_file: /etc/ssl/certs/ca.pem
@@ -104,7 +104,7 @@ pipeline:
 | `queue_dir` | `/tmp/fluent-bit-bbolt` | Directory holding the bbolt `queue.db` file |
 | `otlp_grpc` | *(none)* | OTLP gRPC endpoint (e.g. `localhost:4317`) |
 | `otlp_http` | *(none)* | OTLP HTTP base URL (e.g. `http://localhost:4318`; `/v1/logs` is appended automatically) |
-| `otlp_http_headers` | *(none)* | Comma-separated extra HTTP headers for every OTLP/HTTP request (e.g. `Authorization=Bearer token,X-Tenant=acme`) |
+| `otlp_http_headers` | *(none)* | Semicolon-separated extra HTTP headers for every OTLP/HTTP request (e.g. `Authorization=Bearer token;X-Tenant=acme`). Semicolons are used as delimiter so header values may contain commas (e.g. `VL-Stream-Fields=host.name,severity`). |
 | `timeout` | `10s` | Per-request export timeout. Zero means no timeout. |
 | `tls_ca_file` | *(none)* | Path to a PEM CA certificate for verifying the remote endpoint. Re-read on every TLS handshake. |
 | `tls_cert_file` | *(none)* | Path to a PEM client certificate for mTLS. Requires `tls_key_file`. Re-read on every TLS handshake. |
@@ -224,7 +224,7 @@ spec:
     - name: install-plugin
       # Pin to a released tag for reproducible deployments. Also available
       # as :latest (tracks the newest tag), :v0 (major), and :v0.2 (minor).
-      image: ghcr.io/nickytd/fluent-bit-output-go:v0.2.0
+      image: ghcr.io/nickytd/fluent-bit-output-go:v0.9.0
       volumeMounts:
         - name: plugin
           mountPath: /output
@@ -282,8 +282,8 @@ which:
 To cut a release:
 
 ```bash
-git tag -a v0.5.0 -m "Release v0.5.0"
-git push origin v0.5.0
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
 ```
 
 The release workflow fires automatically. To re-run manually use the
