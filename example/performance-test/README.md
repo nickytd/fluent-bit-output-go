@@ -19,21 +19,6 @@ Grafana → four dashboards (Fluent Bit, Fluent Bit go-out Plugin, OTel Collecto
 - `kubectl` configured against a target cluster
 - `helm` >= 3
 - `jq` (used in `check.sh` / `fetch.sh` for JSON parsing)
-- `direnv` (optional but recommended — auto-loads `.envrc`)
-
-## Configuration
-
-Default parameters are set in `.envrc`. With `direnv` installed, run `direnv allow` once and all scripts and `make` targets pick them up automatically.
-
-```bash
-# .envrc
-export NAMESPACE=perf-test
-export NAMESPACES=20
-export JOBS=20
-export LOGS=125000
-export LOGS_DELAY=10ms
-export VL_ENDPOINT=http://localhost:9428
-```
 
 ## Quick Start
 
@@ -94,22 +79,25 @@ With defaults: `20 × 20 × 100 = 40,000 r/s`
 
 ## Querying VictoriaLogs
 
-When port-forwarded to `localhost:9428`:
+Using the default in-cluster endpoint:
 
 ```bash
 # Total ingested count across all logger jobs
-curl 'http://localhost:9428/select/logsql/stats_query?query=name%3A~%22ns-.*%22+%7C+stats+count()+as+total&time=now'
+curl 'http://victorialogs-http.perf-test.svc.cluster.local:9428/select/logsql/stats_query?query=name%3A~%22ns-.*%22+%7C+stats+count()+as+total&time=now'
 
 # Count for a specific namespace
-curl 'http://localhost:9428/select/logsql/stats_query?query=name%3A~%22ns-1-job-.*%22+%7C+stats+count()+as+total&time=now'
+curl 'http://victorialogs-http.perf-test.svc.cluster.local:9428/select/logsql/stats_query?query=name%3A~%22ns-1-job-.*%22+%7C+stats+count()+as+total&time=now'
 ```
 
-Or use the scripts directly:
+Or use the scripts directly (run `make port-forward-victorialogs` first, then override `VL_ENDPOINT`):
 
 ```bash
-VL_ENDPOINT=http://localhost:9428 bash check.sh        # total progress
-VL_ENDPOINT=http://localhost:9428 bash fetch.sh        # per-namespace
-VL_ENDPOINT=http://localhost:9428 bash fetch.sh 3      # namespace 3 only
+make check                                             # total progress (in-cluster default)
+make fetch                                             # per-namespace
+make fetch NS=3                                        # namespace 3 only
+
+VL_ENDPOINT=http://localhost:9428 make check           # when port-forwarding
+VL_ENDPOINT=http://localhost:9428 make fetch NS=3      # when port-forwarding
 ```
 
 ## Dashboards
