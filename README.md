@@ -235,7 +235,7 @@ spec:
           mountPath: /output
   containers:
     - name: fluent-bit
-      image: fluent/fluent-bit:latest
+      image: fluent/fluent-bit:5.1.2
       args:
         - -c
         - /fluent-bit/etc/fluent-bit.yaml
@@ -261,7 +261,9 @@ Override `-dst` if your shared volume is mounted at a different path.
 
 A full `DaemonSet` example — including a `ConfigMap` with a fluent-bit YAML
 that wires up `go-out` with an OTLP/gRPC exporter and a `hostPath` for the
-persistent bbolt queue — lives at [`deploy/kubernetes-daemonset.yaml`](deploy/kubernetes-daemonset.yaml).
+persistent bbolt queue — lives at [`example/deploy/kubernetes-daemonset.yaml`](example/deploy/kubernetes-daemonset.yaml).
+An `OpenTelemetryCollector` CR to receive those logs lives alongside it at
+[`example/deploy/otelcol.yaml`](example/deploy/otelcol.yaml).
 
 ### Building the image locally
 

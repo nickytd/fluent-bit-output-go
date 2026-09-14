@@ -1,7 +1,45 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluent-bit
+  namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fluent-bit
+subjects:
+  - kind: ServiceAccount
+    name: fluent-bit
+    namespace: observability
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: fluent-bit-config
+  namespace: observability
 data:
   # Reference fluent-bit config that loads the go-out plugin from the shared
   # volume populated by the initContainer.
@@ -20,13 +58,14 @@ data:
       outputs:
         - name: go-out
           match: "*"
-          otlp_grpc: otel-collector.observability.svc.cluster.local:4317
+          otlp_grpc: fluent-bit-collector.observability.svc.cluster.local:4317
           queue_dir: /var/lib/fluent-bit/queue
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: fluent-bit
+  namespace: observability
   labels:
     app.kubernetes.io/name: fluent-bit
 spec:
@@ -38,24 +77,52 @@ spec:
       labels:
         app.kubernetes.io/name: fluent-bit
     spec:
+      serviceAccountName: fluent-bit
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         # Copies /plugin/go-out.so from the plugin image onto the shared
         # emptyDir at /output, which fluent-bit then loads with `-e`.
         - name: install-plugin
-          image: ghcr.io/nickytd/fluent-bit-output-go:v0.1.0
+          image: ghcr.io/nickytd/fluent-bit-output-go:v0.9.0
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
           volumeMounts:
             - name: plugin
               mountPath: /output
       containers:
         - name: fluent-bit
-          image: fluent/fluent-bit:latest
+          image: fluent/fluent-bit:5.1.2
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           args:
             - -c
             - /fluent-bit/etc/fluent-bit.yaml
             - -e
             - /fluent-bit/plugins/go-out.so
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: config
               mountPath: /fluent-bit/etc
