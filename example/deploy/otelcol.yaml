@@ -1,0 +1,31 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: fluent-bit
+  namespace: observability
+spec:
+  mode: deployment
+  replicas: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 200Mi
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+
+    exporters:
+      debug:
+        verbosity: basic
+
+    service:
+      pipelines:
+        logs:
+          receivers: [otlp]
+          exporters: [debug]
