@@ -8,7 +8,7 @@
 
 A [Fluent Bit](https://fluentbit.io/) output plugin written in Go, compiled as
 a C shared library. It converts log records from Fluent Bit's pipeline into
-[OpenTelemetry](https://opentelemetry.io/) `plog.Logs` structures, buffers them
+[OpenTelemetry](https://opentelemetry.io/) [plog.Logs](https://pkg.go.dev/go.opentelemetry.io/collector/pdata/plog#Logs) structures, buffers them
 in a persistent [bbolt](https://github.com/etcd-io/bbolt) queue on the local
 disk, and forwards them to a configurable OTLP target (gRPC, HTTP, or stdout
 for debugging).
@@ -16,6 +16,23 @@ for debugging).
 The plugin is distributed as a container image published to GHCR and is
 intended to run as a Kubernetes initContainer that copies the compiled `.so`
 into a shared volume for a co-located `fluent-bit` container to load with `-e`.
+
+## Comparison with Fluent Bit's built-in `opentelemetry` output
+
+Fluent Bit ships a native `opentelemetry` output plugin. This plugin fills gaps that matter for production deployments:
+
+| Capability | Built-in `opentelemetry` | This plugin |
+|---|---|---|
+| **Persistent queue** | No — in-memory retry only, lost on crash | Yes — bbolt on disk, survives restarts |
+| **At-least-once delivery** | No | Yes — record deleted only after successful export |
+| **Export failure handling** | Drops after retry budget exhausted | Capped exponential backoff (500 ms → 30 s), never drops |
+| **Resource attribute promotion** | No | Yes — `resource_attributes` key routes fields to OTLP resource scope |
+| **OTel envelope group support** | Native (built-in processor awareness) | Yes — handles `opentelemetry_envelope` sentinel timestamps |
+| **Deployment** | Compiled into Fluent Bit | External `.so` loaded via `-e`, shipped as a container initContainer |
+
+**When to prefer this plugin:** you need durable, at-least-once delivery with automatic replay after endpoint downtime or Fluent Bit restarts, or you want fine-grained control over which fields become OTLP resource attributes.
+
+**When the built-in plugin is sufficient:** you can tolerate in-memory retry semantics and your endpoint is reliably reachable.
 
 ## Features
 
@@ -59,10 +76,6 @@ Build / development:
 - gcc (for the cgo build of `-buildmode=c-shared`)
 - [OTel Collector](https://opentelemetry.io/docs/collector/) (`otelcol`
   binary, only for the e2e tests)
-
-Dev tooling (linters, test runner, security scanners) is managed via
-`tools/go.mod` and invoked through `go tool -modfile=tools/go.mod` — no
-separate installs required.
 
 ## Build
 
@@ -139,10 +152,6 @@ make e2e-test     # builds .so, starts otelcol, runs fluent-bit, asserts output
 make test         # both
 ```
 
-CI runs unit tests with the race detector via `make unit-test TEST_ARGS="-race -count=1"`.
-To match CI locally, run the same command. Bare `go test -race ./...` also works but
-bypasses `gotestsum` and the tools module.
-
 E2E tests require `fluent-bit` and `otelcol` on PATH. They start an OTel
 Collector with the debug exporter, run Fluent Bit with the plugin exporting
 via OTLP/HTTP, and assert that log records (resource attributes, severity,
@@ -187,10 +196,6 @@ Fluent Bit ─▶ FLBPluginFlushCtx ─▶ processRecords() ─▶ plog.Logs
   binary storage in the queue.
 
 ## How It Works
-
-Plugin operational logs go to **stderr** using a custom `slog.Handler` that
-matches Fluent Bit's `[ts] [level] [tag] message` format so the plugin's own
-logs blend into fluent-bit's console output.
 
 Fluent Bit's `opentelemetry_envelope` processor injects two synthetic records
 around each envelope group, distinguished by sentinel Fluent Bit timestamps:
