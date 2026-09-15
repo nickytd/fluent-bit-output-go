@@ -36,13 +36,18 @@ RUN go mod download
 COPY . .
 
 ARG TARGETPLATFORM
+ARG VERSION=dev
+ARG REVISION=unknown
 RUN --mount=type=cache,target=/root/.cache/go-build \
     case "${TARGETPLATFORM}" in \
       "linux/amd64") export GOARCH=amd64 CC=x86_64-linux-gnu-gcc ;; \
       "linux/arm64") export GOARCH=arm64 CC=aarch64-linux-gnu-gcc ;; \
       *) echo "unsupported platform: ${TARGETPLATFORM}"; exit 1 ;; \
     esac; \
-    CGO_ENABLED=1 GOOS=linux go build -buildmode=c-shared -o /out/go-out.so .
+    CGO_ENABLED=1 GOOS=linux go build \
+      -buildmode=c-shared \
+      -ldflags="-X main.version=${VERSION} -X main.commit=${REVISION}" \
+      -o /out/go-out.so .
 
 # --- Stage 2: build the static copy tool -----------------------------------
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS copy-builder
