@@ -15,6 +15,24 @@ import (
 	"go.opentelemetry.io/otel/metric/noop"
 )
 
+func TestLogsEndpoint(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"bare host", "https://host:4318", "https://host:4318/v1/logs"},
+		{"trailing slash", "https://host:4318/", "https://host:4318/v1/logs"},
+		{"already has path", "https://host:4318/v1/logs", "https://host:4318/v1/logs"},
+		{"path plus slash", "https://host:4318/v1/logs/", "https://host:4318/v1/logs"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := logsEndpoint(tc.in); got != tc.want {
+				t.Fatalf("logsEndpoint(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseHeaders_empty(t *testing.T) {
 	h, err := ParseHeaders("")
 	if err != nil {
