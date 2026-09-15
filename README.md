@@ -79,8 +79,8 @@ pipeline:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `id` | auto-increment | Instance identifier used as a prefix in log lines |
-| `queue_dir` | `/tmp/fluent-bit-bbolt` | Directory holding the per-instance bbolt file (`<id>.db`) |
+| `id` | auto-increment | Instance identifier used as a log-line prefix, metric label, and the bbolt filename (`<id>.db`). Must match `[A-Za-z0-9._-]+` and be at most 64 characters. |
+| `queue_dir` | `/tmp/fluent-bit-bbolt` | Absolute path to the directory holding the per-instance bbolt file (`<id>.db`). Relative paths are rejected. |
 | `otlp_grpc` | *(none)* | OTLP gRPC endpoint (e.g. `localhost:4317`) |
 | `otlp_http` | *(none)* | OTLP HTTP base URL (e.g. `http://localhost:4318`; `/v1/logs` is appended automatically) |
 | `otlp_http_headers` | *(none)* | Semicolon-separated extra HTTP headers for every OTLP/HTTP request (e.g. `Authorization=Bearer token;X-Tenant=acme`). Semicolons are used as delimiter so header values may contain commas (e.g. `VL-Stream-Fields=host.name,severity`). |
