@@ -1,18 +1,20 @@
-NAMESPACE    ?= perf-test
-HELM_RELEASE ?= fluent-bit-plugin
-NAMESPACES   ?= 20
-JOBS         ?= 20
-LOGS         ?= 125000
-LOGS_DELAY   ?= 10ms
-LOGGER_IMAGE ?= nickytd/log-generator:v0.1.10
-NODE_SELECTOR ?=
-NS           ?=
+NAMESPACE      ?= perf-test
+HELM_RELEASE   ?= fluent-bit-plugin
+NAMESPACES     ?= 10
+JOBS           ?= 10
+LOGS           ?= 10000
+LOGS_DELAY     ?= 10ms
+LOGGER_IMAGE   ?= nickytd/log-generator:v0.1.10
+NODE_SELECTOR  ?=
+NS             ?=
 
 export NAMESPACE HELM_RELEASE NAMESPACES JOBS LOGS LOGS_DELAY LOGGER_IMAGE NODE_SELECTOR VALUES_FILE
 
 SCRIPT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
 VALUES_FILE ?=
+
+.DEFAULT_GOAL := setup
 
 .PHONY: setup run check fetch down clean test \
         port-forward-prometheus port-forward-grafana port-forward-victorialogs
