@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -63,7 +64,7 @@ var pluginConfigMap = []output.ConfigMap{
 		Name:     "queue_dir",
 		DefValue: "/tmp/fluent-bit-bbolt",
 		Flags:    0,
-		Desc:     "Directory holding the bbolt queue.db file for persistent buffering.",
+		Desc:     "Absolute path to the directory holding the bbolt queue.db file for persistent buffering.",
 	},
 	{
 		Type:     output.FLB_CONFIG_MAP_STR,
@@ -179,6 +180,14 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	queueDir := output.FLBPluginConfigKey(plugin, "queue_dir")
 	if queueDir == "" {
 		queueDir = "/tmp/fluent-bit-bbolt"
+	}
+	// Require an absolute queue_dir: a relative path is resolved against
+	// fluent-bit's working directory, which can differ across restarts and
+	// silently break the persistence guarantee (records must land in the same
+	// place every start).
+	if !filepath.IsAbs(queueDir) {
+		inst.logger.Error("queue_dir must be an absolute path", "queue_dir", queueDir)
+		return output.FLB_ERROR
 	}
 
 	otlpHTTP := output.FLBPluginConfigKey(plugin, "otlp_http")
