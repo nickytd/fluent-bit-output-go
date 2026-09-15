@@ -15,7 +15,7 @@ OpenTelemetry Collector.
 
 - A Kubernetes cluster with access to node container logs under `/var/log`.
 - The [OpenTelemetry Operator](https://opentelemetry.io/docs/platforms/kubernetes/operator/) installed, because `otelcol.yaml` uses the `OpenTelemetryCollector` custom resource.
-- Nodes that can pull `ghcr.io/nickytd/fluent-bit-output-go:v0.10.0` and `fluent/fluent-bit:5.1.2`.
+- Nodes that can pull `ghcr.io/nickytd/fluent-bit-output-go:v0.10.1` and `fluent/fluent-bit:5.1.2`.
 
 ## Deploy
 
