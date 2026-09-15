@@ -25,6 +25,9 @@ type httpExporter struct {
 }
 
 // NewHTTP returns an Exporter that POSTs OTLP/HTTP protobuf to endpoint+"/v1/logs".
+// A trailing slash on endpoint is trimmed, and an endpoint that already ends in
+// "/v1/logs" is used as-is, so both "https://host" and "https://host/v1/logs"
+// resolve to the same target.
 // headers (may be nil) are attached to every request after Content-Type.
 // timeout is applied as http.Client.Timeout; zero means no timeout.
 // tlsCfg (may be nil) is set on the HTTP transport; nil uses system defaults.
@@ -32,13 +35,24 @@ type httpExporter struct {
 func NewHTTP(endpoint string, headers http.Header, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider) Exporter {
 	transport := &http.Transport{TLSClientConfig: tlsCfg}
 	return &httpExporter{
-		endpoint: endpoint + "/v1/logs",
+		endpoint: logsEndpoint(endpoint),
 		headers:  headers,
 		client: &http.Client{
 			Timeout:   timeout,
 			Transport: newMetricsRoundTripper(transport, mp),
 		},
 	}
+}
+
+// logsEndpoint normalizes a configured OTLP/HTTP base into the logs URL,
+// avoiding a doubled "//v1/logs" from a trailing slash or a repeated
+// "/v1/logs" when the caller already included the signal path.
+func logsEndpoint(endpoint string) string {
+	trimmed := strings.TrimRight(endpoint, "/")
+	if strings.HasSuffix(trimmed, "/v1/logs") {
+		return trimmed
+	}
+	return trimmed + "/v1/logs"
 }
 
 func (e *httpExporter) Export(ctx context.Context, logs plog.Logs) error {
