@@ -33,13 +33,23 @@ func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporte
 
 	for {
 		q.mu.Lock()
-		for !q.hasItems() && ctx.Err() == nil {
+		hasItems, err := q.hasItems()
+		for err == nil && !hasItems && ctx.Err() == nil {
 			q.cond.Wait()
+			hasItems, err = q.hasItems()
 		}
 		q.mu.Unlock()
 
 		if ctx.Err() != nil {
 			return
+		}
+		if err != nil {
+			logger.Error("consumer: check queue contents", "err", err)
+			if !sleepCtx(ctx, backoff) {
+				return
+			}
+			backoff = min(backoff*2, exportBackoffMax)
+			continue
 		}
 
 		// Track whether any Export in this drain pass failed so we can back
@@ -47,7 +57,7 @@ func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporte
 		// persistently-failing endpoint.
 		exportFailed := false
 		var keys [][]byte
-		_ = q.db.View(func(tx *bolt.Tx) error {
+		err = q.db.View(func(tx *bolt.Tx) error {
 			c := tx.Bucket(bucketName).Cursor()
 			for k, v := c.First(); k != nil; k, v = c.Next() {
 				key := make([]byte, len(k))
@@ -84,14 +94,22 @@ func runConsumer(ctx context.Context, q *Queue, logger *slog.Logger, exp exporte
 			return nil
 		})
 
-		if len(keys) > 0 {
-			_ = q.db.Update(func(tx *bolt.Tx) error {
+		if err != nil {
+			logger.Error("consumer: read queue", "err", err)
+			exportFailed = true
+		} else if len(keys) > 0 {
+			if err := q.db.Update(func(tx *bolt.Tx) error {
 				b := tx.Bucket(bucketName)
 				for _, k := range keys {
-					_ = b.Delete(k)
+					if err := b.Delete(k); err != nil {
+						return err
+					}
 				}
 				return nil
-			})
+			}); err != nil {
+				logger.Error("consumer: delete exported payloads", "err", err)
+				exportFailed = true
+			}
 		}
 
 		if exportFailed {
@@ -118,13 +136,13 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func (q *Queue) hasItems() bool {
+func (q *Queue) hasItems() (bool, error) {
 	var hasItems bool
-	_ = q.db.View(func(tx *bolt.Tx) error {
+	err := q.db.View(func(tx *bolt.Tx) error {
 		c := tx.Bucket(bucketName).Cursor()
 		k, _ := c.First()
 		hasItems = k != nil
 		return nil
 	})
-	return hasItems
+	return hasItems, err
 }
