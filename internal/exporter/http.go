@@ -1,0 +1,94 @@
+// Copyright 2026 nickytd
+// SPDX-License-Identifier: Apache-2.0
+
+package exporter
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"fmt"
+	"maps"
+	"net/http"
+	"strings"
+	"time"
+
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
+	"go.opentelemetry.io/otel/metric"
+)
+
+type httpExporter struct {
+	endpoint string
+	headers  http.Header
+	client   *http.Client
+}
+
+// NewHTTP returns an Exporter that POSTs OTLP/HTTP protobuf to endpoint+"/v1/logs".
+// headers (may be nil) are attached to every request after Content-Type.
+// timeout is applied as http.Client.Timeout; zero means no timeout.
+// tlsCfg (may be nil) is set on the HTTP transport; nil uses system defaults.
+// mp is used to create request/byte/duration instruments; pass a noop provider to disable.
+func NewHTTP(endpoint string, headers http.Header, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider) Exporter {
+	transport := &http.Transport{TLSClientConfig: tlsCfg}
+	return &httpExporter{
+		endpoint: endpoint + "/v1/logs",
+		headers:  headers,
+		client: &http.Client{
+			Timeout:   timeout,
+			Transport: newMetricsRoundTripper(transport, mp),
+		},
+	}
+}
+
+func (e *httpExporter) Export(ctx context.Context, logs plog.Logs) error {
+	req := plogotlp.NewExportRequestFromLogs(logs)
+	body, err := req.MarshalProto()
+	if err != nil {
+		return fmt.Errorf("marshal proto: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, e.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	maps.Copy(httpReq.Header, e.headers)
+
+	resp, err := e.client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("http post: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("otlp http: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (e *httpExporter) Shutdown(_ context.Context) error {
+	e.client.CloseIdleConnections()
+	return nil
+}
+
+// ParseHeaders parses a semicolon-separated list of "Name=Value" pairs into an
+// http.Header. An empty string returns an empty header without error. Header
+// names are canonicalised via http.CanonicalHeaderKey. Semicolons are used as
+// the delimiter (not commas) so that header values containing commas — such as
+// "VL-Stream-Fields=host.name,severity" — are parsed correctly.
+func ParseHeaders(raw string) (http.Header, error) {
+	if raw == "" {
+		return http.Header{}, nil
+	}
+	h := http.Header{}
+	for token := range strings.SplitSeq(raw, ";") {
+		token = strings.TrimSpace(token)
+		name, value, ok := strings.Cut(token, "=")
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("invalid header %q: expected Name=Value", token)
+		}
+		h.Set(strings.TrimSpace(name), value)
+	}
+	return h, nil
+}
