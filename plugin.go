@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 	"unsafe"
@@ -161,6 +162,13 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	if id == "" {
 		id = fmt.Sprintf("%d", instanceCount)
 		instanceCount++
+	} else if err := validateInstanceID(id); err != nil {
+		// id is turned into the bbolt filename (<queue_dir>/<id>.db) and reused
+		// as a metric label and log prefix, so reject unsafe values outright
+		// rather than sanitising them (which would silently change the filename
+		// and orphan any existing on-disk queue).
+		slog.New(baseHandler).Error("invalid id", "id", id, "err", err)
+		return output.FLB_ERROR
 	}
 
 	inst := &pluginInstance{
@@ -302,6 +310,24 @@ func FLBPluginUnregister(def unsafe.Pointer) {
 }
 
 func main() {}
+
+// validInstanceID matches ids that are safe to embed in a filename, a metric
+// label, and a log prefix: ASCII letters/digits and a small set of separators,
+// no path separators. Length is capped separately.
+var validInstanceID = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// validateInstanceID rejects ids that could escape queue_dir or produce an
+// unusable bbolt filename. It disallows path separators (so "../" traversal is
+// impossible), limits the character set, and caps the length.
+func validateInstanceID(id string) error {
+	if len(id) > 64 {
+		return fmt.Errorf("too long (%d chars, max 64)", len(id))
+	}
+	if !validInstanceID.MatchString(id) {
+		return fmt.Errorf("must match [A-Za-z0-9._-]+")
+	}
+	return nil
+}
 
 func parseCSVSet(s string) map[string]struct{} {
 	m := make(map[string]struct{})
