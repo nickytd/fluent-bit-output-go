@@ -13,6 +13,13 @@ GCI_DIRS     := $(ROOT_DIR)/internal $(ROOT_DIR)/cmd
 GCI_OPT      ?= -s standard -s default -s "prefix($(shell go list -m))" --skip-generated
 TEST_ARGS    ?=
 
+# Injected into the plugin via -ldflags so `make build` artifacts report the
+# same version/commit as released containers. Fall back to dev/unknown outside
+# a git checkout.
+VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+REVISION     ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+GO_LDFLAGS   := -X main.version=$(VERSION) -X main.commit=$(REVISION)
+
 .DEFAULT_GOAL := all
 
 .PHONY: all
@@ -20,7 +27,7 @@ all: check unit-test build
 
 $(ROOT_DIR)/bin/$(PLUGIN_NAME).so: $(wildcard *.go) go.mod
 	@mkdir -p $(ROOT_DIR)/bin
-	go build -buildmode=c-shared -o $@ .
+	go build -buildmode=c-shared -ldflags='$(GO_LDFLAGS)' -o $@ .
 
 .PHONY: build
 build: $(ROOT_DIR)/bin/$(PLUGIN_NAME).so

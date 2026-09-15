@@ -5,31 +5,51 @@ package main
 
 import "runtime/debug"
 
-func buildInfo() (version, commit string) {
-	version, commit = "dev", "unknown"
+// version and commit are overridable at build time via:
+//
+//	-ldflags "-X main.version=<v> -X main.commit=<sha>"
+//
+// Left at their defaults (a plain `go build`/`go install`), buildInfo() falls
+// back to runtime/debug.ReadBuildInfo() VCS stamping.
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
+func buildInfo() (v, c string) {
+	v, c = version, commit
+	if v != "dev" && c != "unknown" {
+		return v, c // ldflags injected real values — they win.
+	}
+
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		return
+		return v, c
 	}
-	if info.Main.Version != "" && info.Main.Version != "(devel)" {
-		version = info.Main.Version
+
+	if v == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		v = info.Main.Version
 	}
-	var rev, modified string
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			rev = s.Value
-			if len(rev) > 10 {
-				rev = rev[:10]
-			}
-		case "vcs.modified":
-			if s.Value == "true" {
-				modified = "+dirty"
+
+	if c == "unknown" {
+		var rev, modified string
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				rev = s.Value
+				if len(rev) > 10 {
+					rev = rev[:10]
+				}
+			case "vcs.modified":
+				if s.Value == "true" {
+					modified = "+dirty"
+				}
 			}
 		}
+		if rev != "" {
+			c = rev + modified
+		}
 	}
-	if rev != "" {
-		commit = rev + modified
-	}
-	return
+
+	return v, c
 }
