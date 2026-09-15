@@ -41,6 +41,7 @@ type Queue struct {
 	cond       *sync.Cond
 	cancelFn   context.CancelFunc
 	done       chan struct{}
+	shutdown   sync.Once
 	closed     atomic.Bool // set true in Shutdown before db.Close; guards Depth()
 	instanceID string
 
@@ -168,6 +169,11 @@ func (q *Queue) initMetrics(mp metric.MeterProvider, logger *slog.Logger) {
 // Enqueue writes one marshalled plog.Logs batch to the bbolt bucket under the
 // next monotonically-increasing key and signals the consumer.
 func (q *Queue) Enqueue(data []byte) error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed.Load() {
+		return fmt.Errorf("bbolt put: queue is shut down")
+	}
 	seq := q.writeSeq.Add(1)
 	var key [8]byte
 	binary.BigEndian.PutUint64(key[:], seq)
@@ -186,14 +192,18 @@ func (q *Queue) Enqueue(data []byte) error {
 // Depth returns the number of keys currently in the bbolt bucket via
 // BucketStats.KeyN (O(1)). Returns 0 when the DB is closed.
 func (q *Queue) Depth() int64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	if q.closed.Load() {
 		return 0
 	}
 	var n int64
-	_ = q.db.View(func(tx *bolt.Tx) error {
+	if err := q.db.View(func(tx *bolt.Tx) error {
 		n = int64(tx.Bucket(bucketName).Stats().KeyN)
 		return nil
-	})
+	}); err != nil {
+		return 0
+	}
 	return n
 }
 
@@ -201,13 +211,17 @@ func (q *Queue) Depth() int64 {
 // closed and closes it. closed is set before db.Close so Depth() never
 // calls View on a closing handle.
 func (q *Queue) Shutdown() {
-	q.cancelFn()
-	q.cond.Broadcast()
-	<-q.done
-	// Set closed before db.Close so any concurrent Depth() call that passes
-	// the guard before this point will find a still-open DB. Depth() is only
-	// called from the Prometheus scrape path; bbolt serialises concurrent
-	// View/Close internally, so the worst outcome is a benign error return.
-	q.closed.Store(true)
-	_ = q.db.Close()
+	q.shutdown.Do(func() {
+		q.mu.Lock()
+		q.closed.Store(true)
+		q.cancelFn()
+		q.cond.Broadcast()
+		q.mu.Unlock()
+
+		<-q.done
+
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		_ = q.db.Close()
+	})
 }

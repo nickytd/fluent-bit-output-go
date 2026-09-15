@@ -127,6 +127,58 @@ func TestConsumerPreservesKeyOnExportError(t *testing.T) {
 	}
 }
 
+// TestConsumerWakesOnEnqueueAfterIdle is the regression test for the lost
+// wake-up race. The consumer's predicate (hasItems) reads bbolt, and Enqueue
+// mutates it then signals; if the Signal is delivered without holding q.mu it
+// can slip between the consumer's hasItems() check and its cond.Wait(), leaving
+// the batch undrained until the next Enqueue or shutdown. Each iteration here
+// drains the queue to empty (so the consumer parks in cond.Wait), then enqueues
+// a single fresh batch and requires it to drain promptly — repeated to make the
+// narrow interleaving likely to surface.
+func TestConsumerWakesOnEnqueueAfterIdle(t *testing.T) {
+	exp := &stubExporter{}
+	q := newTestQueue(t, exp)
+
+	marshaler := &plog.ProtoMarshaler{}
+	data, err := marshaler.MarshalLogs(newLogsWithBody("wake"))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	const rounds = 50
+	for i := range rounds {
+		if err := q.Enqueue(data); err != nil {
+			t.Fatalf("Enqueue round %d: %v", i, err)
+		}
+		// The batch must drain (bucket empties) well within the backoff-free
+		// happy path. A lost wake-up would leave it parked past this deadline.
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) && bucketKeyCount(t, q.db) != 0 {
+			time.Sleep(time.Millisecond)
+		}
+		if n := bucketKeyCount(t, q.db); n != 0 {
+			t.Fatalf("round %d: batch not drained after enqueue — consumer missed wake-up (bucket has %d keys)", i, n)
+		}
+	}
+
+	if got := exp.callCount(); got < rounds {
+		t.Fatalf("expected at least %d Export calls, got %d", rounds, got)
+	}
+}
+
+func TestEnqueueRejectsWritesAfterShutdown(t *testing.T) {
+	exp := &stubExporter{}
+	q, err := New(quietLogger(), t.TempDir(), exp, noop.NewMeterProvider())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	q.Shutdown()
+
+	if err := q.Enqueue([]byte("after shutdown")); err == nil {
+		t.Fatal("Enqueue after Shutdown returned nil")
+	}
+}
+
 // TestConsumerRetainsKeysWhileEndpointDown verifies that during a sustained
 // export outage the bbolt bucket keeps every enqueued payload — the durability
 // promise that the pre-fix consumer silently broke.
