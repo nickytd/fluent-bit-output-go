@@ -8,8 +8,9 @@
 // in-memory sequence counter is reseeded from the bucket's last key so a
 // restart with un-drained items never overwrites them.
 //
-// Each plugin output instance owns its own Queue so that per-instance config
-// (queue_dir, otlp_http_headers, exporter) is fully isolated.
+// Each plugin output instance owns its own bbolt file (<queue_dir>/<id>.db)
+// so that concurrent bolt.Open calls from multiple instances do not contend
+// on bbolt's exclusive file lock.
 package queue
 
 import (
@@ -67,7 +68,11 @@ func newWithID(logger *slog.Logger, dir string, exp exporter.Exporter, mp metric
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create queue dir: %w", err)
 	}
-	d, err := bolt.Open(filepath.Join(dir, "queue.db"), 0o600, nil)
+	dbFile := filepath.Join(dir, instanceID+".db")
+	if instanceID == "" {
+		dbFile = filepath.Join(dir, "queue.db")
+	}
+	d, err := bolt.Open(dbFile, 0o600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("open bbolt: %w", err)
 	}
