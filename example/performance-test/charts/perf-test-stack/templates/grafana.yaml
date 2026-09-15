@@ -55,6 +55,13 @@ spec:
                   key: admin-password
             - name: GF_PATHS_PROVISIONING
               value: /etc/grafana/provisioning
+            # readOnlyRootFilesystem makes /usr/share/grafana/data/plugins-bundled
+            # read-only; Grafana's startup plugin preinstall/auto-update tries to
+            # unlink files there and fails, leaving the prometheus datasource plugin
+            # unregistered ("Could not find plugin definition for data source").
+            # Disable preinstall so the already-bundled core plugins load as-is.
+            - name: GF_PLUGINS_PREINSTALL_DISABLED
+              value: "true"
           ports:
             - name: http
               containerPort: {{ .Values.grafana.port }}
