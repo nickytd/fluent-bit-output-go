@@ -3,42 +3,7 @@
 End-to-end performance test harness for the `go-out` Fluent Bit OTLP output plugin.
 
 ## Stack
-
-```
-Logger Jobs (nickytd/log-generator) → stdout → /var/log/containers
-  → Fluent Bit DaemonSet (go-out plugin)
-    → OTel Collector (OTLP gRPC :4317)
-      → VictoriaLogs (:9428)
-
-Prometheus → scrapes Fluent Bit :2020, go-out plugin :2021, OTel :8888, VictoriaLogs :9428
-Grafana → four dashboards (Fluent Bit, Fluent Bit go-out Plugin, OTel Collector, VictoriaLogs)
-```
-
-## Prerequisites
-
-- `kubectl` configured against a target cluster
-- `helm` >= 3
-- `jq` (used in `check.sh` / `fetch.sh` for JSON parsing)
-
-## Quick Start
-
-```bash
-# Deploy the stack
-make setup
-
-# Run the load test
-make run
-
-# Check progress at any time
-make check
-
-# Per-namespace breakdown
-make fetch
-
-# Teardown
-make down    # delete logger jobs/namespaces only
-make clean   # full teardown including Helm release and PVCs
-```
+![perf-test](/images/fluent-bit-output-go-perf-test.png)
 
 ## Parameters
 

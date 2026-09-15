@@ -13,26 +13,11 @@ in a persistent [bbolt](https://github.com/etcd-io/bbolt) queue on the local
 disk, and forwards them to a configurable OTLP target (gRPC, HTTP, or stdout
 for debugging).
 
+![plugin](images/fluent-bit-output-go.png)
+
 The plugin is distributed as a container image published to GHCR and is
 intended to run as a Kubernetes initContainer that copies the compiled `.so`
 into a shared volume for a co-located `fluent-bit` container to load with `-e`.
-
-## Comparison with Fluent Bit's built-in `opentelemetry` output
-
-Fluent Bit ships a native `opentelemetry` output plugin. This plugin fills gaps that matter for production deployments:
-
-| Capability | Built-in `opentelemetry` | This plugin |
-|---|---|---|
-| **Persistent queue** | No — in-memory retry only, lost on crash | Yes — bbolt on disk, survives restarts |
-| **At-least-once delivery** | No | Yes — record deleted only after successful export |
-| **Export failure handling** | Drops after retry budget exhausted | Capped exponential backoff (500 ms → 30 s), never drops |
-| **Resource attribute promotion** | No | Yes — `resource_attributes` key routes fields to OTLP resource scope |
-| **OTel envelope group support** | Native (built-in processor awareness) | Yes — handles `opentelemetry_envelope` sentinel timestamps |
-| **Deployment** | Compiled into Fluent Bit | External `.so` loaded via `-e`, shipped as a container initContainer |
-
-**When to prefer this plugin:** you need durable, at-least-once delivery with automatic replay after endpoint downtime or Fluent Bit restarts, or you want fine-grained control over which fields become OTLP resource attributes.
-
-**When the built-in plugin is sufficient:** you can tolerate in-memory retry semantics and your endpoint is reliably reachable.
 
 ## Features
 
@@ -64,25 +49,6 @@ Fluent Bit ships a native `opentelemetry` output plugin. This plugin fills gaps 
 - **Configurable export target**: stdout (OTLP JSON, for debugging), OTLP/HTTP,
   or OTLP/gRPC.
 
-## Requirements
-
-Runtime:
-
-- Fluent Bit (the plugin is loaded via `-e /path/to/go-out.so`)
-
-Build / development:
-
-- Go 1.27+
-- gcc (for the cgo build of `-buildmode=c-shared`)
-- [OTel Collector](https://opentelemetry.io/docs/collector/) (`otelcol`
-  binary, only for the e2e tests)
-
-## Build
-
-```bash
-make build    # produces bin/go-out.so
-```
-
 ## Usage
 
 ```bash
@@ -109,12 +75,12 @@ pipeline:
       # tls_key_file: /etc/ssl/private/client.key
 ```
 
-### Configuration Keys
+## Configuration Keys
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `id` | auto-increment | Instance identifier used as a prefix in log lines |
-| `queue_dir` | `/tmp/fluent-bit-bbolt` | Directory holding the bbolt `queue.db` file |
+| `queue_dir` | `/tmp/fluent-bit-bbolt` | Directory holding the per-instance bbolt file (`<id>.db`) |
 | `otlp_grpc` | *(none)* | OTLP gRPC endpoint (e.g. `localhost:4317`) |
 | `otlp_http` | *(none)* | OTLP HTTP base URL (e.g. `http://localhost:4318`; `/v1/logs` is appended automatically) |
 | `otlp_http_headers` | *(none)* | Semicolon-separated extra HTTP headers for every OTLP/HTTP request (e.g. `Authorization=Bearer token;X-Tenant=acme`). Semicolons are used as delimiter so header values may contain commas (e.g. `VL-Stream-Fields=host.name,severity`). |
@@ -129,21 +95,6 @@ If neither `otlp_grpc` nor `otlp_http` is set, records are emitted as OTLP
 JSON on stdout — useful for local debugging. Setting both is rejected at
 init time.
 
-## Testing with an OTel Collector
-
-An example collector config is provided in `otel-collector.yaml`:
-
-```bash
-# Start the collector: receives on gRPC :4317 and HTTP :4318, prints via
-# the debug exporter.
-otelcol --config otel-collector.yaml
-
-# In another terminal, start fluent-bit with the plugin. The default
-# fluent-bit.yaml uses otlp_http; to test gRPC instead, edit fluent-bit.yaml
-# so `otlp_grpc: localhost:4317` is set and `otlp_http` is commented out.
-make run
-```
-
 ## Testing
 
 ```bash
@@ -157,54 +108,17 @@ Collector with the debug exporter, run Fluent Bit with the plugin exporting
 via OTLP/HTTP, and assert that log records (resource attributes, severity,
 body) appear in the collector's output.
 
-## Architecture
-
-```
-Fluent Bit ─▶ FLBPluginFlushCtx ─▶ processRecords() ─▶ plog.Logs
-                                                          │
-                    ProtoMarshaler ◀─────────────────────┘
-                          │
-                          ▼
-          bbolt DB (single "logs" bucket, uint64 keys)
-                          │
-                          ▼
-      consumer goroutine (sync.Cond wake) ─▶ ProtoUnmarshaler
-                          │
-                          ▼
-              exporter.Export(ctx, plog.Logs)
-                          │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-   stdout (JSON)     OTLP/HTTP          OTLP/gRPC
-                    (plogotlp)          (plogotlp)
-```
-
-- **Queue.** bbolt single-file B+ tree (`queue.db`) with one `logs` bucket.
-  Big-endian uint64 keys give lexicographic FIFO ordering; each enqueue is a
-  single ACID `Update` transaction. On startup the plugin reseeds its
-  in-memory `writeSeq` from the bucket's last key so a restart with
-  un-drained records never overwrites them.
-- **Consumer.** A single background goroutine woken by a `sync.Cond` signal
-  after every enqueue. On wake it iterates the bucket and calls
-  `exp.Export(ctx, logs)` for each record. On export success the key is
-  queued for a batch `Delete` in a separate `Update` transaction. **On
-  export failure the key is preserved** and the goroutine enters a capped
-  exponential backoff (500 ms → 30 s, cancellable on shutdown) so a
-  down endpoint never spins the consumer. Unmarshalable payloads are
-  logged and dropped — they will never succeed on retry.
-- **Serialization.** `plog.ProtoMarshaler` / `ProtoUnmarshaler` for compact
-  binary storage in the queue.
-
 ## How It Works
 
-Fluent Bit's `opentelemetry_envelope` processor injects two synthetic records
-around each envelope group, distinguished by sentinel Fluent Bit timestamps:
+Each Fluent Bit flush call converts msgpack records to `plog.Logs`, serialises
+them with `plog.ProtoMarshaler`, and writes the bytes to a per-instance bbolt
+file (`<queue_dir>/<id>.db`) under a monotonically-increasing uint64 key.
 
-- `0xFFFFFFFF` → group start (carries resource + instrumentation-scope metadata)
-- `0xFFFFFFFE` → group end
-
-Records between the markers inherit that group's resource and scope. Records
-outside any group get their own empty `ResourceLogs`.
+A single background goroutine drains the queue in FIFO order, calling
+`exp.Export` and deleting each key only after a successful export
+(at-least-once semantics). On export failure it enters a capped exponential
+backoff (500 ms → 30 s) rather than dropping records. The exporter backend is
+one of: stdout JSON (debugging), OTLP/HTTP, or OTLP/gRPC.
 
 ## Container image and Kubernetes deployment
 
@@ -217,107 +131,22 @@ designed to run as a Kubernetes **initContainer** that copies `go-out.so`
 onto a shared `emptyDir`, from which the main `fluent-bit` container then
 loads it via `-e`.
 
-### Minimal Pod example
+## Comparison with Fluent Bit's built-in `opentelemetry` output
 
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: fluent-bit
-spec:
-  initContainers:
-    - name: install-plugin
-      # Pin to a released tag for reproducible deployments. Also available
-      # as :latest (tracks the newest tag), :v0 (major), and :v0.2 (minor).
-      image: ghcr.io/nickytd/fluent-bit-output-go:v0.9.0
-      volumeMounts:
-        - name: plugin
-          mountPath: /output
-  containers:
-    - name: fluent-bit
-      image: fluent/fluent-bit:5.1.2
-      args:
-        - -c
-        - /fluent-bit/etc/fluent-bit.yaml
-        - -e
-        - /fluent-bit/plugins/go-out.so
-      volumeMounts:
-        - name: plugin
-          mountPath: /fluent-bit/plugins
-          readOnly: true
-        # …plus your fluent-bit config and log volumes.
-  volumes:
-    - name: plugin
-      emptyDir: {}
-```
+Fluent Bit ships a native `opentelemetry` output plugin. This plugin fills gaps that matter for production deployments:
 
-The initContainer's default command is:
+| Capability | Built-in `opentelemetry` | This plugin |
+|---|---|---|
+| **Persistent queue** | No — in-memory retry only, lost on crash | Yes — bbolt on disk, survives restarts |
+| **At-least-once delivery** | No | Yes — record deleted only after successful export |
+| **Export failure handling** | Drops after retry budget exhausted | Capped exponential backoff (500 ms → 30 s), never drops |
+| **Resource attribute promotion** | No | Yes — `resource_attributes` key routes fields to OTLP resource scope |
+| **OTel envelope group support** | Native (built-in processor awareness) | Yes — handles `opentelemetry_envelope` sentinel timestamps |
+| **Deployment** | Compiled into Fluent Bit | External `.so` loaded via `-e`, shipped as a container initContainer |
 
-```
-/copy-plugin -src=/plugin/go-out.so -dst=/output
-```
+**When to prefer this plugin:** you need durable, at-least-once delivery with automatic replay after endpoint downtime or Fluent Bit restarts, or you want fine-grained control over which fields become OTLP resource attributes.
 
-Override `-dst` if your shared volume is mounted at a different path.
-
-A full `DaemonSet` example — including a `ConfigMap` with a fluent-bit YAML
-that wires up `go-out` with an OTLP/gRPC exporter and a `hostPath` for the
-persistent bbolt queue — lives at [`example/deploy/kubernetes-daemonset.yaml`](example/deploy/kubernetes-daemonset.yaml).
-An `OpenTelemetryCollector` CR to receive those logs lives alongside it at
-[`example/deploy/otelcol.yaml`](example/deploy/otelcol.yaml).
-
-### Building the image locally
-
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t fluent-bit-output-go:local .
-```
-
-The `Dockerfile` is a three-stage multi-arch build: one stage cross-compiles
-the cgo `.so` against glibc (matching Fluent Bit's official Debian-based
-runtime image), one stage builds the static `copy-plugin` binary, and the
-final stage assembles both into a `scratch` image.
-
-## Releases
-
-Releases are tag-triggered. Push a semver tag to fire the release workflow,
-which:
-
-1. Builds native `linux/amd64` and `linux/arm64` images in parallel
-2. Assembles and pushes a multi-arch manifest to GHCR (`vX.Y.Z` and `latest`)
-3. Creates a GitHub Release with auto-generated notes categorised by
-   Conventional Commit type
-
-To cut a release:
-
-```bash
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
-```
-
-The release workflow fires automatically. To re-run manually use the
-`workflow_dispatch` trigger and supply the tag name.
-
-Published releases and their generated notes live on the
-[Releases page](https://github.com/nickytd/fluent-bit-output-go/releases).
-
-## Persistent Queue Experiments (design history)
-
-The current bbolt design landed after two earlier prototypes on
-[dque](https://github.com/joncrlsn/dque) and
-[Pebble](https://github.com/cockroachdb/pebble). Both prototype branches
-have been retired; the table below is kept as design-decision context for
-readers evaluating alternative KV backends.
-
-| Aspect | [dque](https://github.com/joncrlsn/dque) | [Pebble](https://github.com/cockroachdb/pebble) | bbolt (current) |
-|--------|------|--------|------------------------|
-| **Backend** | Segmented flat files + gob | LSM-tree (SSTables + WAL) | B+ tree (single file) |
-| **Serialization** | `encoding/gob` (public fields only) | Raw `[]byte` (no opinion) | Protobuf |
-| **Queue semantics** | Built-in FIFO (`Enqueue`/`DequeueBlock`) | Manual (sequence keys + iterator) | Manual (uint64 keys + cursor) |
-| **Blocking dequeue** | Native (`DequeueBlock`) | Must implement (`sync.Cond`) | Must implement (`sync.Cond`) |
-| **Space reclamation** | Automatic (segment file deletion) | Automatic (leveled compaction) | Manual (bbolt compaction) |
-| **Write throughput** | Moderate (file-per-segment) | High (WAL + memtable batching) | Moderate (single-writer B+ tree) |
-| **Crash safety** | WAL per segment | WAL (configurable sync) | ACID transactions |
-| **Maintenance** | Abandoned (last commit 2024) | Active (CockroachDB production) | Active (etcd project) |
-| **Dependency weight** | Light (~3 deps) | Moderate (~15 deps) | Light (~5 deps) |
+**When the built-in plugin is sufficient:** you can tolerate in-memory retry semantics and your endpoint is reliably reachable.
 
 ## License
 
