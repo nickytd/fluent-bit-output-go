@@ -288,6 +288,11 @@ func FLBPluginExitCtx(ctx unsafe.Pointer) int {
 //export FLBPluginUnregister
 func FLBPluginUnregister(def unsafe.Pointer) {
 	slog.New(baseHandler).Info("unregistering plugin")
+	// Reset the auto-id counter so a hot-reload re-issues the same default ids
+	// (0, 1, ...) to instances without an explicit id. Without this the counter
+	// keeps climbing across reloads, changing each instance's id — and thus its
+	// bbolt filename — which would orphan its un-drained on-disk queue.
+	instanceCount = 0
 	if telemetrySrv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
