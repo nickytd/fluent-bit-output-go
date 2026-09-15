@@ -223,7 +223,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			inst.logger.Error("invalid otlp_http_headers", "err", err)
 			return output.FLB_ERROR
 		}
-		exp = exporter.NewHTTP(otlpHTTP, headers, timeout, tlsCfg, mp)
+		exp = exporter.NewHTTP(otlpHTTP, timeout, tlsCfg, mp, headers)
 	default:
 		exp = exporter.NewStdout()
 	}

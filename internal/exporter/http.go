@@ -28,11 +28,11 @@ type httpExporter struct {
 // A trailing slash on endpoint is trimmed, and an endpoint that already ends in
 // "/v1/logs" is used as-is, so both "https://host" and "https://host/v1/logs"
 // resolve to the same target.
-// headers (may be nil) are attached to every request after Content-Type.
 // timeout is applied as http.Client.Timeout; zero means no timeout.
 // tlsCfg (may be nil) is set on the HTTP transport; nil uses system defaults.
 // mp is used to create request/byte/duration instruments; pass a noop provider to disable.
-func NewHTTP(endpoint string, headers http.Header, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider) Exporter {
+// headers (may be nil) are attached to every request after Content-Type.
+func NewHTTP(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider, headers http.Header) Exporter {
 	transport := &http.Transport{TLSClientConfig: tlsCfg}
 	return &httpExporter{
 		endpoint: logsEndpoint(endpoint),
