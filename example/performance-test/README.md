@@ -79,7 +79,7 @@ Grafana is pre-provisioned with four dashboards:
 ```bash
 cat > my-values.yaml <<EOF
 plugin:
-  tag: v0.9.0
+  tag: v0.10.0
 fluentbit:
   tag: 5.2.0
 EOF
