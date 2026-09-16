@@ -14,6 +14,12 @@ fluentbit:
   storageTotalLimitSize: 2G
   storageMaxChunksUp: 4096
   queueDir: /var/run/fluentbit/bbolt
+  # Per-node host directory backing the queue + chunks volumes. hostPath (not
+  # emptyDir) so enqueued-but-unexported records survive a pod delete/restart:
+  # a DaemonSet reschedules to the same node, and the plugin replays them
+  # (at-least-once). emptyDir is destroyed on pod deletion and loses them.
+  # The queue (bbolt) and chunks live in subfolders under this base.
+  hostPath: /var/lib/fluentbit-perf
   resourceAttributes: "k8s_namespace_name,k8s_pod_name,k8s_container_name,k8s_host"
   nodeSelector: {}
   tolerations:

@@ -133,6 +133,10 @@ spec:
           hostPath:
             path: /var/lib/docker/containers
         - name: queue
-          emptyDir: {}
+          hostPath:
+            path: {{ include "fluent-bit-plugin.hostQueuePath" . }}
+            type: DirectoryOrCreate
         - name: chunks
-          emptyDir: {}
+          hostPath:
+            path: {{ include "fluent-bit-plugin.hostChunksPath" . }}
+            type: DirectoryOrCreate
