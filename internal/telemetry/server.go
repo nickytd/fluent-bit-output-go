@@ -91,9 +91,18 @@ func New(addr string, logger *slog.Logger) *Server {
 	return s
 }
 
+// bindRetries is the number of Listen attempts before giving up.
+// 3 × 100 ms covers the OS port-release window after a hot-reload Stop.
+const bindRetries = 3
+const bindRetryDelay = 100 * time.Millisecond
+
 // Start binds the listener and begins serving. A bind failure (e.g. port
 // already in use) is logged as a warning and returns nil — the plugin must
 // not crash because observability is unavailable.
+//
+// On hot-reload the previous server's TCP socket may not be fully released by
+// the OS immediately after Stop returns. Start retries the Listen call up to
+// bindRetries times with a short delay to cover that window.
 func (s *Server) Start() error {
 	if s.srv == nil {
 		// Server was disabled in New (prometheus exporter init failed).
@@ -101,9 +110,24 @@ func (s *Server) Start() error {
 		return nil
 	}
 
-	ln, err := net.Listen("tcp", s.srv.Addr)
+	var (
+		ln  net.Listener
+		err error
+	)
+	for i := range bindRetries {
+		ln, err = net.Listen("tcp", s.srv.Addr)
+		if err == nil {
+			break
+		}
+		if i < bindRetries-1 {
+			s.logger.Debug("telemetry: bind attempt failed, retrying",
+				"addr", s.srv.Addr, "attempt", i+1, "err", err)
+			time.Sleep(bindRetryDelay)
+		}
+	}
 	if err != nil {
-		s.logger.Warn("telemetry: bind failed, observability disabled", "addr", s.srv.Addr, "err", err)
+		s.logger.Warn("telemetry: bind failed after retries, observability disabled",
+			"addr", s.srv.Addr, "attempts", bindRetries, "err", err)
 		// Discard the server so MeterProvider returns noop.
 		s.srv = nil
 		if s.mp != nil {

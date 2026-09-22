@@ -70,7 +70,8 @@ func TestServerPortConflict(t *testing.T) {
 	first := startServer(t, ":0")
 	addr := first.Addr()
 
-	// Second server on the same port — must not error, must be disabled.
+	// Second server on the same port while first is still running — must not
+	// error after retries exhaust, must be disabled (Addr empty, noop provider).
 	second := New(addr, quietLogger())
 	if err := second.Start(); err != nil {
 		t.Fatalf("second Start must not error on conflict, got: %v", err)
@@ -82,6 +83,50 @@ func TestServerPortConflict(t *testing.T) {
 	}
 	if second.MeterProvider() == nil {
 		t.Fatal("MeterProvider() must not return nil on bind failure")
+	}
+}
+
+func TestServerHotReloadPortReuse(t *testing.T) {
+	// Simulate the hot-reload sequence: start, stop, then start a new server on
+	// the same port. The retry loop in Start must recover from the brief window
+	// where the OS hasn't fully released the port yet.
+	first := New(":0", quietLogger())
+	if err := first.Start(); err != nil {
+		t.Fatalf("first Start: %v", err)
+	}
+	addr := first.Addr()
+	if addr == "" {
+		t.Fatal("first server Addr() must be non-empty")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	first.Stop(ctx)
+
+	// Immediately start a second server on the same address — this is the
+	// hot-reload scenario where the port may still be in TIME_WAIT.
+	second := New(addr, quietLogger())
+	if err := second.Start(); err != nil {
+		t.Fatalf("second Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel2()
+		second.Stop(ctx2)
+	})
+
+	if second.Addr() == "" {
+		t.Fatal("second server Addr() must be non-empty after hot-reload reuse")
+	}
+
+	// Verify it actually serves.
+	resp, err := http.Get("http://" + second.Addr() + "/metrics")
+	if err != nil {
+		t.Fatalf("GET /metrics on reused port: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 }
 
