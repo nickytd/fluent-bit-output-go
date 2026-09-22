@@ -95,6 +95,37 @@ If neither `otlp_grpc` nor `otlp_http` is set, records are emitted as OTLP
 JSON on stdout — useful for local debugging. Setting both is rejected at
 init time.
 
+## Observability
+
+The plugin starts a small HTTP server exposing:
+
+- `/metrics` — Prometheus text format (via the OTel SDK → Prometheus bridge)
+- `/debug/pprof/` — Go pprof profiling endpoints
+
+The listen address comes from `FLB_GO_OUT_DEBUG_ADDR` (default `:2021`). The
+server uses a private registry, so it never pollutes the host process's global
+Prometheus registry. If the bind fails, observability is silently disabled and
+the plugin keeps running.
+
+The telemetry server is a **process-wide singleton**: it is started once on
+first load and reused across Fluent Bit hot-reloads — it is deliberately not
+stopped or rebound on reload. This avoids a port-release race on `:2021` that
+could otherwise leave the endpoint down for the pod's lifetime, and keeps
+counters accumulating instead of resetting. It lives until the process exits.
+
+Exported metrics (OTel instrument names; Prometheus applies its own
+`_total`/unit suffixes on export):
+
+| Metric | Type | Unit | Description |
+|--------|------|------|-------------|
+| `flbgoout.queue.enqueued` | counter | `{batch}` | Log batches written to the bbolt queue (label `instance`) |
+| `flbgoout.queue.exports` | counter | `{attempt}` | Queue drain attempts by outcome (labels `instance`, `status`) |
+| `flbgoout.queue.depth` | gauge | `{batch}` | Un-drained log batches currently in the queue (label `instance`) |
+| `flbgoout.http.requests` | counter | `{request}` | OTLP/HTTP export requests by outcome (label `status`) |
+| `flbgoout.http.bytes_sent` | counter | `By` | Bytes sent in OTLP/HTTP request bodies |
+| `flbgoout.http.duration` | histogram | `s` | OTLP/HTTP export request duration |
+| `flbgoout.plugin.reloads` | counter | `{reload}` | Fluent Bit plugin hot-reloads observed since process start |
+
 ## Testing
 
 ```bash
