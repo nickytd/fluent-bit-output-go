@@ -51,6 +51,13 @@ type Queue struct {
 	attrEnqueue metric.MeasurementOption // pre-built {instance} attr for Enqueue hot path
 	attrSuccess metric.MeasurementOption // pre-built {instance, status=success}
 	attrFailure metric.MeasurementOption // pre-built {instance, status=failure}
+
+	// depthReg is the handle for the depth-gauge callback. Because the plugin's
+	// MeterProvider is a process-wide singleton that outlives individual queue
+	// instances (it survives Fluent Bit hot-reloads), the callback must be
+	// unregistered in Shutdown — otherwise each reload would stack another
+	// closure capturing a dead Queue on the same meter.
+	depthReg metric.Registration
 }
 
 // New opens the bbolt file under dir, spawns the consumer goroutine, and wires
@@ -151,18 +158,29 @@ func (q *Queue) initMetrics(mp metric.MeterProvider, logger *slog.Logger) {
 	}
 
 	// Register an observable gauge that reads the live bucket key count on
-	// each scrape. The closure captures q; Depth() guards against closed DB.
-	_, err = meter.Int64ObservableGauge(
+	// each scrape. RegisterCallback (not the instrument-level WithInt64Callback)
+	// is used so the callback can be Unregister'd in Shutdown — the shared
+	// MeterProvider outlives this Queue, so a leaked closure would keep
+	// observing a dead queue on every scrape. The closure captures q; Depth()
+	// guards against closed DB.
+	depthGauge, err := meter.Int64ObservableGauge(
 		"flbgoout.queue.depth",
 		metric.WithDescription("Current number of un-drained log batches in the bbolt queue."),
 		metric.WithUnit("{batch}"),
-		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			o.Observe(q.Depth(), q.attrEnqueue)
-			return nil
-		}),
 	)
 	if err != nil {
-		logger.Warn("queue: failed to register depth gauge", "err", err)
+		logger.Warn("queue: failed to create depth gauge", "err", err)
+		return
+	}
+	q.depthReg, err = meter.RegisterCallback(
+		func(_ context.Context, o metric.Observer) error {
+			o.ObserveInt64(depthGauge, q.Depth(), q.attrEnqueue)
+			return nil
+		},
+		depthGauge,
+	)
+	if err != nil {
+		logger.Warn("queue: failed to register depth callback", "err", err)
 	}
 }
 
@@ -219,6 +237,12 @@ func (q *Queue) Shutdown() {
 		q.mu.Unlock()
 
 		<-q.done
+
+		// Remove the depth-gauge callback from the shared meter so it stops
+		// being invoked on future scrapes once this queue's DB is closed.
+		if q.depthReg != nil {
+			_ = q.depthReg.Unregister()
+		}
 
 		q.mu.Lock()
 		defer q.mu.Unlock()
