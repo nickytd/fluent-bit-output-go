@@ -1,0 +1,102 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+direction: right
+
+loggers: Logger Jobs {
+  style.stroke-dash: 3
+  style.border-radius: 8
+  style.font-size: 30
+
+  a: Logger Jobs {
+    style.font-size: 26
+  }
+  b: Logger Jobs {
+    style.font-size: 26
+  }
+}
+
+logs: |md
+  `/var/log/containers`
+| {
+  shape: text
+  style.font-size: 26
+}
+
+cluster: Observability Stack {
+  style.stroke-dash: 3
+  style.border-radius: 8
+  style.font-size: 34
+
+  fluentbit: Fluent Bit DaemonSet {
+    style.border-radius: 16
+    style.font-size: 30
+
+    fb1: "fluent-bit\n(with go-out)" {
+      shape: image
+      icon: https://cdn.simpleicons.org/fluentbit
+      style.font-size: 26
+    }
+    dots: "..." {
+      shape: text
+      style.font-size: 30
+    }
+    fb2: "fluent-bit\n(with go-out)" {
+      shape: image
+      icon: https://cdn.simpleicons.org/fluentbit
+      style.font-size: 26
+    }
+  }
+
+  otel: OTel Collector {
+    shape: image
+    icon: https://raw.githubusercontent.com/cncf/artwork/master/projects/opentelemetry/icon/color/opentelemetry-icon-color.svg
+    style.font-size: 28
+  }
+
+  vl: VictoriaLogs {
+    style.stroke-dash: 3
+    style.font-size: 28
+  }
+
+  prometheus: Prometheus {
+    shape: image
+    icon: https://cdn.simpleicons.org/prometheus
+    style.font-size: 28
+  }
+
+  grafana: Grafana {
+    shape: image
+    icon: https://cdn.simpleicons.org/grafana
+    style.font-size: 28
+  }
+
+  otel -> vl: ingest {
+    style.stroke-dash: 3
+    style.font-size: 24
+  }
+  vl -> grafana: query {
+    style.stroke-dash: 3
+    style.font-size: 24
+  }
+  prometheus -> grafana: scrape metrics {
+    style.stroke-dash: 3
+    style.font-size: 24
+  }
+}
+
+loggers -> logs: write {
+  style.stroke-dash: 3
+  style.font-size: 24
+}
+logs -> cluster.fluentbit: tail {
+  style.stroke-dash: 3
+  style.font-size: 24
+}
+cluster.fluentbit -> cluster.otel: "OTLP\n(go-out)" {
+  style.stroke-dash: 3
+  style.font-size: 24
+}
