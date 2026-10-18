@@ -1,0 +1,92 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+direction: right
+
+fluentbit: Fluent Bit {
+  shape: image
+  icon: https://cdn.simpleicons.org/fluentbit
+  style.font-size: 28
+}
+
+plugin: go-out plugin {
+  style.stroke-dash: 3
+  style.border-radius: 8
+  style.font-size: 34
+
+  ctx: FLBPluginFlushCtx {
+    label: "FLBPluginFlushCtx\nmsgpack -> plog.Logs"
+    style.font-size: 26
+  }
+
+  queue: Persistent Queue {
+    label: "queue\nbbolt B+ tree"
+    shape: cylinder
+    style.font-size: 26
+  }
+
+  consumer: Consumer {
+    label: "consumer\n(FIFO drain)"
+    style.stroke-dash: 3
+    style.font-size: 26
+  }
+
+  exporter: Exporter {
+    label: "exporter\nOTLP marshaler"
+    style.stroke-dash: 3
+    style.font-size: 26
+  }
+
+  ctx -> queue: "1. enqueue" {
+    style.font-size: 24
+  }
+  queue -> consumer: "2. dequeue\n(at-least-once)" {
+    style.font-size: 24
+  }
+  consumer -> exporter: "3. export" {
+    style.font-size: 24
+  }
+}
+
+stdout: stdout {
+  label: "stdout\nOTLP JSON"
+  shape: text
+  style.font-size: 28
+}
+
+collector: OTLP Target {
+  style.stroke-dash: 3
+  style.border-radius: 8
+  style.font-size: 34
+
+  otel: "" {
+    shape: image
+    icon: https://raw.githubusercontent.com/cncf/artwork/master/projects/opentelemetry/icon/color/opentelemetry-icon-color.svg
+  }
+  http: otlp_http {
+    style.stroke-dash: 3
+    style.font-size: 26
+  }
+  grpc: otlp_grpc {
+    style.stroke-dash: 3
+    style.font-size: 26
+  }
+}
+
+fluentbit -> plugin.ctx: flush records {
+  style.stroke-dash: 3
+  style.font-size: 24
+}
+plugin.exporter -> stdout: debug {
+  style.stroke-dash: 3
+  style.font-size: 24
+}
+plugin.exporter -> collector.http: "" {
+  style.stroke-dash: 3
+}
+plugin.exporter -> collector.grpc: "" {
+  style.stroke-dash: 3
+}
