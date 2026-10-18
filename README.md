@@ -13,7 +13,7 @@ in a persistent [bbolt](https://github.com/etcd-io/bbolt) queue on the local
 disk, and forwards them to a configurable OTLP target (gRPC, HTTP, or stdout
 for debugging).
 
-![plugin](images/fluent-bit-output-go.png)
+![plugin](images/fluent-bit-output-go-d2.svg)
 
 The plugin is distributed as a container image published to GHCR and is
 intended to run as a Kubernetes initContainer that copies the compiled `.so`
