@@ -3,7 +3,7 @@
 End-to-end performance test harness for the `go-out` Fluent Bit OTLP output plugin.
 
 ## Stack
-![perf-test](/images/fluent-bit-output-go-perf-test.png)
+![perf-test](/images/fluent-bit-output-go-perf-test-d2.svg)
 
 ## Parameters
 
