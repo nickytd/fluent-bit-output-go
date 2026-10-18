@@ -171,7 +171,12 @@ func FLBPluginRegister(def unsafe.Pointer) int {
 		}
 	}
 
-	return output.FLBPluginRegisterWithEventTypeAndConfigMap(def, output.FLB_OUTPUT_LOGS, pluginName, "Go OTLP output plugin", pluginConfigMap)
+	return output.FLBPluginRegisterWithOptions(def,
+		output.WithEventType(output.FLB_OUTPUT_LOGS),
+		output.WithName(pluginName),
+		output.WithDescription("Go OTLP output plugin"),
+		output.WithConfigMap(pluginConfigMap),
+	)
 }
 
 //export FLBPluginInit
