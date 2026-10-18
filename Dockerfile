@@ -16,7 +16,7 @@
 # container. Fluent Bit's official images (fluent/fluent-bit) are glibc-based
 # (debian), so we build against a glibc toolchain here.
 
-ARG GO_VERSION=1.27.0
+ARG GO_VERSION=1.27.2
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS plugin-builder
 
 # Cross-compile the plugin for the target platform. CGO cross builds need the
