@@ -3,17 +3,17 @@ module github.com/nickytd/fluent-bit-output-go
 go 1.27.2
 
 require (
-	github.com/fluent/fluent-bit-go v0.0.0-20260825100519-ee23069796c9
-	github.com/onsi/ginkgo/v2 v2.32.1
-	github.com/onsi/gomega v1.42.1
-	github.com/prometheus/client_golang v1.24.1
+	github.com/fluent/fluent-bit-go v0.0.0-20260909064720-9895046d00ce
+	github.com/onsi/ginkgo/v2 v2.33.1
+	github.com/onsi/gomega v1.44.0
+	github.com/prometheus/client_golang v1.25.0
 	go.etcd.io/bbolt v1.5.0
-	go.opentelemetry.io/collector/pdata v1.65.0
-	go.opentelemetry.io/otel v1.46.0
-	go.opentelemetry.io/otel/exporters/prometheus v0.68.0
-	go.opentelemetry.io/otel/metric v1.46.0
-	go.opentelemetry.io/otel/sdk/metric v1.46.0
-	google.golang.org/grpc v1.83.2
+	go.opentelemetry.io/collector/pdata v1.69.0
+	go.opentelemetry.io/otel v1.47.0
+	go.opentelemetry.io/otel/exporters/prometheus v0.69.0
+	go.opentelemetry.io/otel/metric v1.47.0
+	go.opentelemetry.io/otel/sdk/metric v1.47.0
+	google.golang.org/grpc v1.84.0
 )
 
 require (
@@ -32,15 +32,16 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.72.0 // indirect
 	github.com/prometheus/otlptranslator v1.0.0 // indirect
-	github.com/prometheus/procfs v0.21.1 // indirect
+	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/ugorji/go/codec v1.2.7 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.65.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
-	go.opentelemetry.io/otel/trace v1.46.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.69.0 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.41.0 // indirect
@@ -49,6 +50,6 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
