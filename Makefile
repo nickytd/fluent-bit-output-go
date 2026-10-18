@@ -8,6 +8,9 @@ TOOLS_DIR    := $(ROOT_DIR)/tools
 TOOLS_MOD    := $(TOOLS_DIR)/go.mod
 GO_TOOL      := go tool -modfile=$(TOOLS_MOD)
 
+IMAGES_DIR   := $(ROOT_DIR)/images
+D2_THEME     ?= 200
+
 # plugin.go uses cgo "C" pseudo-import which gci cannot handle correctly; exclude root package
 GCI_DIRS     := $(ROOT_DIR)/internal $(ROOT_DIR)/cmd
 GCI_OPT      ?= -s standard -s default -s "prefix($(shell go list -m))" --skip-generated
@@ -101,6 +104,13 @@ sast: tidy
 .PHONY: govulncheck
 govulncheck: tidy
 	@$(GO_TOOL) govulncheck $(ROOT_DIR)/...
+
+.PHONY: diagrams
+diagrams:
+	@echo "Rendering diagram SVGs from D2 sources..."
+	@for f in $(IMAGES_DIR)/*.d2; do \
+		$(GO_TOOL) d2 --theme $(D2_THEME) "$$f" "$${f%.d2}.svg"; \
+	done
 
 .PHONY: clean
 clean:
