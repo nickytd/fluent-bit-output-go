@@ -1,6 +1,6 @@
 module github.com/nickytd/fluent-bit-output-go
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/fluent/fluent-bit-go v0.0.0-20260909064720-9895046d00ce
