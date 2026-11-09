@@ -80,7 +80,7 @@ spec:
             - -e
             - /fluent-bit/plugins/go-out.so
           env:
-            - name: FLB_GO_OUT_DEBUG_ADDR
+            - name: FLB_GO_OUT_METRICS_ADDR
               value: ":{{ .Values.fluentbit.telemetryPort }}"
           ports:
             - name: http
