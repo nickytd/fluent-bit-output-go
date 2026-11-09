@@ -18,6 +18,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -39,8 +41,6 @@ type Server struct {
 	logger *slog.Logger
 }
 
-// New creates a Server that will listen on addr. Call Start to bind and serve.
-// addr is typically read from the FLB_GO_OUT_DEBUG_ADDR env var by the caller.
 func New(addr string, logger *slog.Logger) *Server {
 	s := &Server{
 		done:   make(chan struct{}),
@@ -74,13 +74,14 @@ func New(addr string, logger *slog.Logger) *Server {
 		Registry: registry,
 	}))
 
-	// Register pprof endpoints explicitly on the private mux. We use the named
-	// import (not blank _) to avoid the DefaultServeMux side-effect.
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	enabled, _ := strconv.ParseBool(os.Getenv("FLB_GO_OUT_PPROF"))
+	if enabled {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
 
 	s.srv = &http.Server{
 		Addr:    addr,
