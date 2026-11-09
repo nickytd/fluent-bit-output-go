@@ -100,12 +100,16 @@ init time.
 The plugin starts a small HTTP server exposing:
 
 - `/metrics` — Prometheus text format (via the OTel SDK → Prometheus bridge)
-- `/debug/pprof/` — Go pprof profiling endpoints
+- `/debug/pprof/` — Go pprof profiling endpoints, **disabled by default**
 
-The listen address comes from `FLB_GO_OUT_DEBUG_ADDR` (default `:2021`). The
+The listen address comes from `FLB_GO_OUT_METRICS_ADDR` (default `:2021`). The
 server uses a private registry, so it never pollutes the host process's global
 Prometheus registry. If the bind fails, observability is silently disabled and
 the plugin keeps running.
+
+The pprof endpoints are only registered when `FLB_GO_OUT_PPROF` is set to a
+truthy value (e.g. `true`, `1`). They are off by default so the debug surface
+is not exposed unless explicitly opted in.
 
 The telemetry server is a **process-wide singleton**: it is started once on
 first load and reused across Fluent Bit hot-reloads — it is deliberately not
