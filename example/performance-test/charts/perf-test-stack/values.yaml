@@ -10,6 +10,9 @@ fluentbit:
   flush: 1
   metricsPort: 2020
   telemetryPort: 2021
+  # Enable Go pprof endpoints on the plugin telemetry server (/debug/pprof/*)
+  # for profiling during the performance test.
+  pprof: true
   storageChunksPath: /var/run/fluentbit/chunks
   storageTotalLimitSize: 2G
   storageMaxChunksUp: 4096

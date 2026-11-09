@@ -82,6 +82,8 @@ spec:
           env:
             - name: FLB_GO_OUT_METRICS_ADDR
               value: ":{{ .Values.fluentbit.telemetryPort }}"
+            - name: FLB_GO_OUT_PPROF
+              value: {{ .Values.fluentbit.pprof | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.fluentbit.metricsPort }}
