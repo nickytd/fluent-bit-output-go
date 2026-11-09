@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -53,17 +54,45 @@ func TestServerStartStop(t *testing.T) {
 	}
 }
 
-func TestServerPprofEndpoint(t *testing.T) {
+func TestServerPprofEndpointDisabled(t *testing.T) {
+	current := os.Getenv("FLB_GO_OUT_PPROF")
+	t.Cleanup(func() {
+		// restore old value of FLB_GO_OUT_PPROF
+		if len(current) > 0 {
+			_ = os.Setenv("FLB_GO_OUT_PPROF", current)
+		}
+	})
+
+	_ = os.Unsetenv("FLB_GO_OUT_PPROF")
+
+	srv := startServer(t, ":0")
+
+	resp, _ := http.Get("http://" + srv.Addr() + "/debug/pprof/")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+	_ = resp.Body.Close()
+}
+
+func TestServerPprofEndpointEnabled(t *testing.T) {
+	current := os.Getenv("FLB_GO_OUT_PPROF")
+	t.Cleanup(func() {
+		if len(current) > 0 {
+			_ = os.Setenv("FLB_GO_OUT_PPROF", current)
+		} else {
+			_ = os.Unsetenv("FLB_GO_OUT_PPROF")
+		}
+	})
+
+	_ = os.Setenv("FLB_GO_OUT_PPROF", "true")
+
 	srv := startServer(t, ":0")
 
 	resp, err := http.Get("http://" + srv.Addr() + "/debug/pprof/")
-	if err != nil {
-		t.Fatalf("GET /debug/pprof/: %v", err)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /debug/pprof/: %v, status: %d", err, resp.StatusCode)
 	}
 	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
 }
 
 func TestServerPortConflict(t *testing.T) {

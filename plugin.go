@@ -145,7 +145,7 @@ func FLBPluginRegister(def unsafe.Pointer) int {
 	logger := slog.New(baseHandler)
 	logger.Info("loading plugin", "version", v, "commit", c)
 
-	addr := os.Getenv("FLB_GO_OUT_DEBUG_ADDR")
+	addr := os.Getenv("FLB_GO_OUT_METRICS_ADDR")
 	if addr == "" {
 		addr = ":2021"
 	}
@@ -165,7 +165,7 @@ func FLBPluginRegister(def unsafe.Pointer) int {
 		reloadCounter = newReloadCounter(telemetrySrv.MeterProvider())
 	} else {
 		// Hot-reload: keep the existing server. The listener is never rebound,
-		// so a changed FLB_GO_OUT_DEBUG_ADDR has no effect until process restart.
+		// so a changed FLB_GO_OUT_METRICS_ADDR has no effect until process restart.
 		if reloadCounter != nil {
 			reloadCounter.Add(context.Background(), 1)
 		}
