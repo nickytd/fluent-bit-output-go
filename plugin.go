@@ -251,7 +251,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 	var exp exporter.Exporter
 	switch {
 	case otlpGRPC != "":
-		exp, err = exporter.NewGRPC(otlpGRPC, timeout, tlsCfg, mp)
+		exp, err = exporter.NewGRPC(otlpGRPC, timeout, tlsCfg, mp, inst.logger)
 		if err != nil {
 			inst.logger.Error("failed to create grpc exporter", "err", err)
 			return output.FLB_ERROR
@@ -262,7 +262,7 @@ func FLBPluginInit(plugin unsafe.Pointer) int {
 			inst.logger.Error("invalid otlp_http_headers", "err", err)
 			return output.FLB_ERROR
 		}
-		exp = exporter.NewHTTP(otlpHTTP, timeout, tlsCfg, mp, headers)
+		exp = exporter.NewHTTP(otlpHTTP, timeout, tlsCfg, mp, headers, inst.logger)
 	default:
 		exp = exporter.NewStdout()
 	}

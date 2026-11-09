@@ -8,6 +8,8 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"strings"
@@ -15,13 +17,18 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
+
+const maxHTTPResponseReadBytes = 1 << 20 // 1 MiB cap on OTLP response body
 
 type httpExporter struct {
 	endpoint string
 	headers  http.Header
 	client   *http.Client
+	logger   *slog.Logger
+	rejected metric.Int64Counter
 }
 
 // NewHTTP returns an Exporter that POSTs OTLP/HTTP protobuf to endpoint+"/v1/logs".
@@ -32,7 +39,8 @@ type httpExporter struct {
 // tlsCfg (may be nil) is set on the HTTP transport; nil uses system defaults.
 // mp is used to create request/byte/duration instruments; pass a noop provider to disable.
 // headers (may be nil) are attached to every request after Content-Type.
-func NewHTTP(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider, headers http.Header) Exporter {
+// logger records a warning when the backend reports an OTLP partial success.
+func NewHTTP(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider, headers http.Header, logger *slog.Logger) Exporter {
 	transport := &http.Transport{TLSClientConfig: tlsCfg}
 	return &httpExporter{
 		endpoint: logsEndpoint(endpoint),
@@ -41,6 +49,8 @@ func NewHTTP(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metr
 			Timeout:   timeout,
 			Transport: newMetricsRoundTripper(transport, mp),
 		},
+		logger:   logger,
+		rejected: newRejectedCounter(mp),
 	}
 }
 
@@ -75,9 +85,43 @@ func (e *httpExporter) Export(ctx context.Context, logs plog.Logs) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("otlp http: status %d", resp.StatusCode)
 	}
+
+	// The backend has already accepted the records (2xx), so parsing the
+	// response body is observability-only: a partial-success payload lets us
+	// log/count rejected records, but any trouble reading or decoding it must
+	// never turn an accepted export into a failure. Returning an error here
+	// would preserve the batch and replay already-delivered records forever
+	// (see internal/queue/consumer.go). Read unconditionally — chunked or
+	// gunzipped responses report ContentLength == -1, so gating on it would
+	// silently skip partial-success reporting.
+	reader := http.MaxBytesReader(nil, resp.Body, maxHTTPResponseReadBytes)
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		e.logger.Warn("otlp http: reading response body", "err", err)
+		return nil
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	exportResponse := plogotlp.NewExportResponse()
+	if err := exportResponse.UnmarshalProto(data); err != nil {
+		e.logger.Warn("otlp http: decoding response body", "err", err)
+		return nil
+	}
+	ps := exportResponse.PartialSuccess()
+	if ps.RejectedLogRecords() != 0 || ps.ErrorMessage() != "" {
+		e.rejected.Add(ctx, ps.RejectedLogRecords(), metric.WithAttributes(
+			attribute.String("transport", "http"),
+		))
+		e.logger.Warn("otlp http partial success",
+			"rejected_log_records", ps.RejectedLogRecords(),
+			"message", ps.ErrorMessage(),
+		)
+	}
+
 	return nil
 }
 

@@ -128,6 +128,7 @@ Exported metrics (OTel instrument names; Prometheus applies its own
 | `flbgoout.http.requests` | counter | `{request}` | OTLP/HTTP export requests by outcome (label `status`) |
 | `flbgoout.http.bytes_sent` | counter | `By` | Bytes sent in OTLP/HTTP request bodies |
 | `flbgoout.http.duration` | histogram | `s` | OTLP/HTTP export request duration |
+| `flbgoout.export.rejected_log_records` | counter | `{record}` | Log records rejected by the backend via OTLP partial success (label `transport`) |
 | `flbgoout.plugin.reloads` | counter | `{reload}` | Fluent Bit plugin hot-reloads observed since process start |
 
 ## Testing

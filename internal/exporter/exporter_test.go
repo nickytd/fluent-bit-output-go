@@ -6,6 +6,7 @@ package exporter
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -130,7 +131,7 @@ func TestHTTPExporterSendsHeaders(t *testing.T) {
 		t.Fatalf("ParseHeaders: %v", err)
 	}
 
-	exp := NewHTTP(srv.URL, 0, nil, noop.NewMeterProvider(), headers)
+	exp := NewHTTP(srv.URL, 0, nil, noop.NewMeterProvider(), headers, slog.New(slog.DiscardHandler))
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -154,7 +155,7 @@ func TestHTTPExporterNoHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, 0, nil, noop.NewMeterProvider(), nil)
+	exp := NewHTTP(srv.URL, 0, nil, noop.NewMeterProvider(), nil, slog.New(slog.DiscardHandler))
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {
@@ -202,7 +203,7 @@ func TestHTTPExporterTimeout(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, 50*time.Millisecond, nil, noop.NewMeterProvider(), nil)
+	exp := NewHTTP(srv.URL, 50*time.Millisecond, nil, noop.NewMeterProvider(), nil, slog.New(slog.DiscardHandler))
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	start := time.Now()
@@ -224,7 +225,7 @@ func TestHTTPExporterTLS(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	exp := NewHTTP(srv.URL, 0, srv.Client().Transport.(*http.Transport).TLSClientConfig, noop.NewMeterProvider(), nil)
+	exp := NewHTTP(srv.URL, 0, srv.Client().Transport.(*http.Transport).TLSClientConfig, noop.NewMeterProvider(), nil, slog.New(slog.DiscardHandler))
 	defer func() { _ = exp.Shutdown(context.Background()) }()
 
 	if err := exp.Export(context.Background(), plog.NewLogs()); err != nil {

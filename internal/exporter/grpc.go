@@ -7,10 +7,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -19,16 +21,19 @@ import (
 )
 
 type grpcExporter struct {
-	client  plogotlp.GRPCClient
-	conn    *grpc.ClientConn
-	timeout time.Duration
+	client   plogotlp.GRPCClient
+	conn     *grpc.ClientConn
+	timeout  time.Duration
+	logger   *slog.Logger
+	rejected metric.Int64Counter
 }
 
 // NewGRPC returns an Exporter that sends via plogotlp.GRPCClient.
 // timeout is applied per Export call via context.WithTimeout; zero means no timeout.
 // tlsCfg (may be nil) selects transport credentials: nil → insecure, non-nil → TLS.
 // mp is used to register gRPC client metrics via stats/opentelemetry; pass a noop provider to disable.
-func NewGRPC(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider) (Exporter, error) {
+// logger records a warning when the backend reports an OTLP partial success.
+func NewGRPC(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metric.MeterProvider, logger *slog.Logger) (Exporter, error) {
 	creds := insecure.NewCredentials()
 	if tlsCfg != nil {
 		creds = credentials.NewTLS(tlsCfg)
@@ -43,9 +48,11 @@ func NewGRPC(endpoint string, timeout time.Duration, tlsCfg *tls.Config, mp metr
 		return nil, fmt.Errorf("grpc dial: %w", err)
 	}
 	return &grpcExporter{
-		client:  plogotlp.NewGRPCClient(conn),
-		conn:    conn,
-		timeout: timeout,
+		client:   plogotlp.NewGRPCClient(conn),
+		conn:     conn,
+		timeout:  timeout,
+		logger:   logger,
+		rejected: newRejectedCounter(mp),
 	}, nil
 }
 
@@ -56,9 +63,19 @@ func (e *grpcExporter) Export(ctx context.Context, logs plog.Logs) error {
 		defer cancel()
 	}
 	req := plogotlp.NewExportRequestFromLogs(logs)
-	_, err := e.client.Export(ctx, req)
+	resp, err := e.client.Export(ctx, req)
 	if err != nil {
 		return fmt.Errorf("grpc export: %w", err)
+	}
+	ps := resp.PartialSuccess()
+	if ps.RejectedLogRecords() != 0 || ps.ErrorMessage() != "" {
+		e.rejected.Add(ctx, ps.RejectedLogRecords(), metric.WithAttributes(
+			attribute.String("transport", "grpc"),
+		))
+		e.logger.Warn("otlp grpc partial success",
+			"rejected_log_records", ps.RejectedLogRecords(),
+			"message", ps.ErrorMessage(),
+		)
 	}
 	return nil
 }

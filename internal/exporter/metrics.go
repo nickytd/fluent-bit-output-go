@@ -47,6 +47,18 @@ func newMetricsRoundTripper(inner http.RoundTripper, mp metric.MeterProvider) ht
 	}
 }
 
+// newRejectedCounter creates the counter for OTLP records the backend rejected
+// via a partial success response. It is shared by the HTTP and gRPC exporters,
+// which distinguish their contributions via a "transport" attribute.
+func newRejectedCounter(mp metric.MeterProvider) metric.Int64Counter {
+	c, _ := mp.Meter("flbgoout/exporter").Int64Counter(
+		"flbgoout.export.rejected_log_records",
+		metric.WithDescription("Total log records rejected by the backend via OTLP partial success."),
+		metric.WithUnit("{record}"),
+	)
+	return c
+}
+
 func (rt *metricsRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	start := time.Now()
 
